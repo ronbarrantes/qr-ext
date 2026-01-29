@@ -31,16 +31,6 @@ This repo includes a GitHub Action that creates a ready-to-download `.zip` of th
 
 The downloaded `.zip` contains the extension files at the zip root (so `manifest.json` is at the top level).
 
-## Create a packaged `.zip` locally (terminal)
-
-This repo also includes a `Makefile` to build the same zip locally:
-
-```bash
-make zip
-```
-
-It will write `dist/cb-qr-ext.zip`.
-
 ### Option B: Get the `.zip` attached to a GitHub Release
 
 1. Create a new Release on GitHub (tag like `v1.0.0`)
