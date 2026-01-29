@@ -70,7 +70,11 @@ function getCurrentFromHistory(queue) {
 
 /**
  * Populate the history dropdown.
- * Display is reversed (newest first) for user convenience.
+ * 
+ * Storage order: [oldest, ..., newest] - last item is current QR
+ * Dropdown order: [newest, ..., oldest] - reversed so current QR item appears at top
+ * 
+ * Example: array [0,1,2,3] -> dropdown shows 3,2,1,0 (3 is at top, matching current QR)
  */
 function populateHistorySelect(queue) {
   const currentValue = historySelect.value;
@@ -81,7 +85,7 @@ function populateHistorySelect(queue) {
   placeholder.textContent = 'Recent items…';
   historySelect.appendChild(placeholder);
 
-  // Show most-recent first in dropdown (reversed from storage order)
+  // Reverse so newest (last in array) appears first in dropdown
   const displayItems = queue.slice(-HISTORY_SELECT_LIMIT).reverse();
   displayItems.forEach((item) => {
     const opt = document.createElement('option');
@@ -103,6 +107,9 @@ function populateHistorySelect(queue) {
  * - If item already exists, it's moved to the end (newest position)
  * - If max limit reached, oldest item is shifted out
  * - Returns the updated queue
+ * 
+ * Example: array [0,1,2,3] + push(1) -> [0,2,3,1] (1 moves to end)
+ * Example: array [0,1,2,3] + push(5) -> [0,1,2,3,5] (5 added at end)
  */
 async function pushToHistory(text) {
   const trimmed = normalizeText(text);
@@ -110,7 +117,7 @@ async function pushToHistory(text) {
 
   const existingQueue = await getHistoryQueue();
 
-  // Remove if exists (to re-add at end), then push to end
+  // Remove if exists (moves item to end), then push to end
   let nextQueue = existingQueue.filter((h) => h !== trimmed);
   nextQueue.push(trimmed);
 
@@ -301,12 +308,13 @@ textInput.addEventListener('paste', () => {
   }, 0);
 });
 
-// History dropdown: selecting an item moves it to the end and generates QR
+// History dropdown: selecting an item moves it to the end of array and generates QR
+// Example: array [0,1,2,3], select "1" -> array becomes [0,2,3,1], QR shows "1"
 historySelect.addEventListener('change', async () => {
   const val = historySelect.value;
   if (!val) return;
 
-  // Push selected item to history (moves it to end) and generate QR
+  // Push selected item to history (moves it to end) and generate QR from last item
   await pushAndGenerateQR(val, 'Loaded from history');
 
   // Reset dropdown to placeholder after selection
