@@ -27,7 +27,7 @@ This repo includes a GitHub Action that creates a ready-to-download `.zip` of th
 2. Click **Actions**
 3. Click **Package Extension (zip)**
 4. Click **Run workflow**
-5. Open the workflow run, then download the `.zip` from the **Artifacts** section
+5. Open the workflow run, then download `cb-qr-ext.zip` from the **Artifacts** section (artifact name: `cb-qr-ext-zip`)
 
 The downloaded `.zip` contains the extension files at the zip root (so `manifest.json` is at the top level).
 

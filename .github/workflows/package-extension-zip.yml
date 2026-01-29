@@ -21,6 +21,17 @@ jobs:
         with:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
+      - name: Build extension zip (no nesting)
+        shell: bash
+        run: make clean zip
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cb-qr-ext-zip
+          path: dist/cb-qr-ext.zip
+          if-no-files-found: error
+
       - name: Prepare artifact (extension files at zip root)
         shell: bash
         run: |
@@ -41,7 +52,7 @@ jobs:
       - name: Build and verify release zip (no nesting)
         if: github.event_name == 'release'
         shell: bash
-        run: make clean zip
+        run: make verify
 
       - name: Attach zip to GitHub Release
         if: github.event_name == 'release'
