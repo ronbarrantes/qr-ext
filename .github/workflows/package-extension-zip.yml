@@ -20,7 +20,25 @@ jobs:
       - name: Create zip (manifest.json at zip root)
         shell: bash
         run: |
-          make clean zip
+          rm -rf dist
+          mkdir -p dist
+          cd clipboard-qr-extension
+          zip -r ../dist/cb-qr-ext.zip . \
+            -x "**/.DS_Store" \
+            -x "**/__MACOSX/**"
+
+      - name: Verify zip layout (no nested zip, flat root)
+        shell: bash
+        run: |
+          unzip -Z -1 dist/cb-qr-ext.zip | grep -qx 'manifest.json'
+          if unzip -Z -1 dist/cb-qr-ext.zip | grep -qE '\.zip$'; then
+            echo "Zip contains a nested .zip file; failing."
+            exit 1
+          fi
+          if unzip -Z -1 dist/cb-qr-ext.zip | grep -q '^clipboard-qr-extension/'; then
+            echo "Zip contents are nested under clipboard-qr-extension/; failing."
+            exit 1
+          fi
 
       - name: Upload zip as workflow artifact
         uses: actions/upload-artifact@v4
