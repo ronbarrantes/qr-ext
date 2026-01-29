@@ -17,6 +17,26 @@ A simple Chrome extension that generates QR codes from your clipboard content.
 4. Click "Load unpacked"
 5. Select the `clipboard-qr-extension` folder
 
+## Download a packaged `.zip` (no terminal)
+
+This repo includes a GitHub Action that creates a ready-to-download `.zip` of the extension.
+
+### Option A: Run the workflow manually (recommended)
+
+1. Go to the repo on GitHub
+2. Click **Actions**
+3. Click **Package Extension (zip)**
+4. Click **Run workflow**
+5. Open the workflow run, then download the `.zip` from the **Artifacts** section
+
+The downloaded `.zip` contains the extension files at the zip root (so `manifest.json` is at the top level).
+
+### Option B: Get the `.zip` attached to a GitHub Release
+
+1. Create a new Release on GitHub (tag like `v1.0.0`)
+2. After it’s published, the workflow will attach a `.zip` asset to that Release
+3. Download it from the Release page under **Assets**
+
 ## Usage
 
 1. Click the extension icon in your Chrome toolbar
