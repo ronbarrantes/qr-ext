@@ -134,10 +134,11 @@ async function saveToHistory(text) {
 
 // Generate or update QR code
 function generateQRCode(text) {
+  const normalized = normalizeText(text);
   // Clear existing QR code
   qrCodeContainer.innerHTML = '';
   
-  if (!text || text.trim() === '') {
+  if (!normalized) {
     qrCodeContainer.classList.add('hidden');
     emptyMessage.classList.remove('hidden');
     return;
@@ -148,7 +149,7 @@ function generateQRCode(text) {
   
   try {
     qrCodeInstance = new QRCode(qrCodeContainer, {
-      text: text,
+      text: normalized,
       width: 150,
       height: 150,
       colorDark: '#000000',
@@ -182,9 +183,10 @@ async function readClipboard() {
   try {
     const text = await navigator.clipboard.readText();
     if (text) {
-      textInput.value = text;
-      generateQRCode(text);
-      await saveToHistory(text);
+      const normalized = normalizeText(text);
+      textInput.value = normalized;
+      generateQRCode(normalized);
+      await saveToHistory(normalized);
       showStatus('Loaded from clipboard', 'success');
     } else {
       showStatus('Clipboard is empty', '');
@@ -246,8 +248,10 @@ textInput.addEventListener('input', () => {
 textInput.addEventListener('paste', () => {
   // Wait for paste to apply to textarea value.
   setTimeout(() => {
-    generateQRCode(textInput.value);
-    saveToHistory(textInput.value);
+    const normalized = normalizeText(textInput.value);
+    textInput.value = normalized;
+    generateQRCode(normalized);
+    saveToHistory(normalized);
   }, 0);
 });
 
