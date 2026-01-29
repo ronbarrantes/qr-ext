@@ -21,7 +21,13 @@ function storageGet(keys) {
 }
 
 function storageSet(obj) {
-  return new Promise((resolve) => chrome.storage.local.set(obj, resolve));
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(obj, () => {
+      const err = chrome.runtime?.lastError;
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }
 
 function normalizeText(text) {
@@ -34,8 +40,31 @@ function truncateLabel(text, maxLen = 60) {
   return `${t.slice(0, maxLen - 1)}…`;
 }
 
+function isQuotaError(err) {
+  const msg = (err?.message ?? '').toString();
+  return /quota/i.test(msg);
+}
+
+function coerceTextArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(normalizeText).filter(Boolean);
+}
+
+function coerceHistoryQueue(saved) {
+  const lastText = normalizeText(saved?.[STORAGE_KEYS.lastText]);
+  const historyRaw = coerceTextArray(saved?.[STORAGE_KEYS.history]);
+
+  // Migration: older versions stored history as "newest-first" (history[0] === lastText).
+  // New format is a FIFO queue: oldest-first (history[0] is the oldest).
+  const looksLikeLegacyNewestFirst =
+    historyRaw.length > 1 && lastText && historyRaw[0] === lastText;
+  const queue = looksLikeLegacyNewestFirst ? historyRaw.slice().reverse() : historyRaw;
+
+  return { queue, lastText, migrated: looksLikeLegacyNewestFirst };
+}
+
 function populateHistorySelect(history) {
-  const items = Array.isArray(history) ? history : [];
+  const queue = coerceTextArray(history);
   const currentValue = historySelect.value;
 
   historySelect.innerHTML = '';
@@ -44,7 +73,9 @@ function populateHistorySelect(history) {
   placeholder.textContent = 'Recent items…';
   historySelect.appendChild(placeholder);
 
-  items.slice(0, HISTORY_SELECT_LIMIT).forEach((item) => {
+  // Show most-recent first, even though storage is a FIFO queue (oldest-first).
+  const displayItems = queue.slice(-HISTORY_SELECT_LIMIT).reverse();
+  displayItems.forEach((item) => {
     const opt = document.createElement('option');
     opt.value = item;
     opt.textContent = truncateLabel(item);
@@ -52,7 +83,7 @@ function populateHistorySelect(history) {
   });
 
   // Keep selection if still present.
-  if (currentValue && items.includes(currentValue)) {
+  if (currentValue && queue.includes(currentValue)) {
     historySelect.value = currentValue;
   } else {
     historySelect.value = '';
@@ -63,18 +94,42 @@ async function saveToHistory(text) {
   const trimmed = normalizeText(text);
   if (!trimmed) return;
 
-  const existing = await storageGet([STORAGE_KEYS.history]);
-  const history = Array.isArray(existing[STORAGE_KEYS.history])
-    ? existing[STORAGE_KEYS.history]
-    : [];
+  const existing = await storageGet([STORAGE_KEYS.history, STORAGE_KEYS.lastText]);
+  const { queue: existingQueue } = coerceHistoryQueue(existing);
 
-  const deduped = [trimmed, ...history.filter((h) => h !== trimmed)].slice(0, HISTORY_LIMIT);
-  await storageSet({
-    [STORAGE_KEYS.lastText]: trimmed,
-    [STORAGE_KEYS.history]: deduped
-  });
+  // FIFO queue with uniqueness: re-adding an item moves it to the back (newest).
+  let nextQueue = existingQueue.filter((h) => h !== trimmed);
+  nextQueue.push(trimmed);
+  if (nextQueue.length > HISTORY_LIMIT) {
+    nextQueue = nextQueue.slice(nextQueue.length - HISTORY_LIMIT);
+  }
 
-  populateHistorySelect(deduped);
+  let didEvictForQuota = false;
+  while (true) {
+    try {
+      await storageSet({
+        [STORAGE_KEYS.lastText]: trimmed,
+        [STORAGE_KEYS.history]: nextQueue
+      });
+      break;
+    } catch (err) {
+      if (isQuotaError(err) && nextQueue.length > 1) {
+        // Storage is "full": dequeue the oldest item(s) until it fits.
+        nextQueue = nextQueue.slice(1);
+        didEvictForQuota = true;
+        continue;
+      }
+
+      console.error('Failed saving history:', err);
+      showStatus('Could not save to history (storage full?)', 'error');
+      return;
+    }
+  }
+
+  populateHistorySelect(nextQueue);
+  if (didEvictForQuota) {
+    showStatus('Storage full: dropped oldest history item(s)', '');
+  }
 }
 
 // Generate or update QR code
@@ -143,10 +198,13 @@ async function readClipboard() {
 
 async function loadLastSavedText() {
   const saved = await storageGet([STORAGE_KEYS.lastText, STORAGE_KEYS.history]);
-  const lastText = saved[STORAGE_KEYS.lastText];
-  const history = saved[STORAGE_KEYS.history];
+  const { queue, lastText, migrated } = coerceHistoryQueue(saved);
 
-  populateHistorySelect(history);
+  populateHistorySelect(queue);
+  if (migrated) {
+    // Best-effort: persist migrated FIFO order.
+    storageSet({ [STORAGE_KEYS.history]: queue }).catch(() => {});
+  }
 
   const trimmed = normalizeText(lastText);
   if (trimmed) {
