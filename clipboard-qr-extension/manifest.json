@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "Generate QR codes from your clipboard content",
   "permissions": [
-    "clipboardRead"
+    "clipboardRead",
+    "storage"
   ],
   "action": {
     "default_popup": "popup.html",
