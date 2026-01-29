@@ -13,8 +13,8 @@ const STORAGE_KEYS = {
   lastText: 'lastText'
 };
 
-const HISTORY_LIMIT = 100;
-const HISTORY_SELECT_LIMIT = 15;
+const HISTORY_LIMIT = 10;
+const HISTORY_SELECT_LIMIT = 10;
 
 function storageGet(keys) {
   return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
