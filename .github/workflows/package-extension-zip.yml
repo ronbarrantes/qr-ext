@@ -17,45 +17,20 @@ jobs:
         with:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
-      - name: Build zip filename from manifest.json
-        id: meta
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json, os, re
-          manifest_path = os.path.join("clipboard-qr-extension", "manifest.json")
-          with open(manifest_path, "r", encoding="utf-8") as f:
-            m = json.load(f)
-          version = str(m.get("version", "0.0.0")).strip()
-          # Keep filename stable and filesystem-safe
-          base = "clipboard-qr-extension"
-          safe_version = re.sub(r"[^0-9A-Za-z._-]+", "-", version).strip("-") or "0.0.0"
-          zip_name = f"{base}-{safe_version}.zip"
-          print(f"zip_name={zip_name}")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
-            out.write(f"zip_name={zip_name}\n")
-            out.write(f"version={version}\n")
-          PY
-
       - name: Create zip (manifest.json at zip root)
         shell: bash
         run: |
-          rm -rf dist
-          mkdir -p dist
-          cd clipboard-qr-extension
-          zip -r "../dist/${{ steps.meta.outputs.zip_name }}" . \
-            -x "**/.DS_Store" \
-            -x "**/__MACOSX/**"
+          make clean zip
 
       - name: Upload zip as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.meta.outputs.zip_name }}
-          path: dist/${{ steps.meta.outputs.zip_name }}
+          name: cb-qr-ext
+          path: dist/cb-qr-ext.zip
           if-no-files-found: error
 
       - name: Attach zip to GitHub Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ steps.meta.outputs.zip_name }}
+          files: dist/cb-qr-ext.zip
