@@ -174,7 +174,7 @@ function handleInputChange() {
   generateQRCode(textInput.value);
 }
 
-// Debounce function to avoid too many QR code generations
+// Debounce function to avoid too many operations
 function debounce(func, wait) {
   let timeout;
   return function executedFunction(...args) {
