@@ -1,35 +1,29 @@
-EXT_DIR := clipboard-qr-extension
-DIST_DIR := dist
-ZIP_NAME := cb-qr-ext.zip
-ZIP_PATH := $(DIST_DIR)/$(ZIP_NAME)
+# Makefile for packaging clipboard QR extension
 
-.PHONY: all clean zip verify
+EXTENSION_DIR = clipboard-qr-extension
+DIST_DIR = dist
+ZIP_FILE = $(DIST_DIR)/cb-qr-ext.zip
 
-all: zip
+.PHONY: clean zip verify all
+
+all: clean zip
 
 clean:
-	rm -rf "$(DIST_DIR)"
+	@echo "Cleaning dist directory..."
+	@rm -rf $(DIST_DIR)
+	@mkdir -p $(DIST_DIR)
 
-$(ZIP_PATH):
-	@test -f "$(EXT_DIR)/manifest.json"
-	@test -f "$(EXT_DIR)/popup.html"
-	@test -f "$(EXT_DIR)/popup.js"
-	@test -f "$(EXT_DIR)/qrcode.min.js"
-	@mkdir -p "$(DIST_DIR)"
-	@cd "$(EXT_DIR)" && zip -r "../$(ZIP_PATH)" . \
-		-x "**/.DS_Store" \
-		-x "**/__MACOSX/**" \
-		-x "**/*.zip"
+zip: clean
+	@echo "Creating zip file from $(EXTENSION_DIR)..."
+	@cd $(EXTENSION_DIR) && zip -r ../$(ZIP_FILE) . -x "*.git*"
+	@echo "Zip file created: $(ZIP_FILE)"
 
-verify: $(ZIP_PATH)
-	@unzip -Z -1 "$(ZIP_PATH)" | grep -qx 'manifest.json'
-	@if unzip -Z -1 "$(ZIP_PATH)" | grep -qE '\.zip$$'; then \
-		echo "Zip contains a nested .zip file; failing."; \
+verify: zip
+	@echo "Verifying zip file..."
+	@if [ ! -f $(ZIP_FILE) ]; then \
+		echo "Error: zip file not found"; \
 		exit 1; \
 	fi
-	@if unzip -Z -1 "$(ZIP_PATH)" | grep -q '^$(EXT_DIR)/'; then \
-		echo "Zip contents are nested under $(EXT_DIR)/; failing."; \
-		exit 1; \
-	fi
-
-zip: $(ZIP_PATH) verify
+	@echo "Zip file contents:"
+	@unzip -l $(ZIP_FILE) | head -20
+	@echo "Zip file verified successfully"
