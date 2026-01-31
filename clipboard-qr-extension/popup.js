@@ -1,19 +1,14 @@
 // DOM Elements
-const qrCodeContainer = document.getElementById('qr-code');
-const emptyMessage = document.getElementById('empty-message');
-const textInput = document.getElementById('text-input');
-const statusEl = document.getElementById('status');
-const historySelect = document.getElementById('history-select');
+const qrCodeContainer = document.getElementById("qr-code");
+const emptyMessage = document.getElementById("empty-message");
+const textInput = document.getElementById("text-input");
+const statusEl = document.getElementById("status");
+const historyDropdown = document.getElementById("history-dropdown");
 
 let qrCodeInstance = null;
 
-// Simplified storage - only track history array
-const STORAGE_KEYS = {
-  history: 'clipboardHistory'
-};
-
+const STORAGE_KEY = "clipboardHistory";
 const HISTORY_LIMIT = 10;
-const HISTORY_SELECT_LIMIT = 10;
 
 function storageGet(keys) {
   return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
@@ -29,235 +24,154 @@ function storageSet(obj) {
   });
 }
 
-function normalizeText(text) {
-  return (text ?? '').toString().trim();
+function trimmedText(text) {
+  return (text ?? "").toString().trim();
 }
 
 function truncateLabel(text, maxLen = 60) {
-  const t = normalizeText(text);
+  const t = trimmedText(text);
   if (t.length <= maxLen) return t;
   return `${t.slice(0, maxLen - 1)}…`;
 }
 
-function isQuotaError(err) {
-  const msg = (err?.message ?? '').toString();
-  return /quota/i.test(msg);
-}
-
 function coerceTextArray(value) {
   if (!Array.isArray(value)) return [];
-  return value.map(normalizeText).filter(Boolean);
+  return value.map(trimmedText).filter(Boolean);
 }
 
-/**
- * Get the history queue from storage.
- * History is stored as FIFO: oldest first, newest last.
- * The last item is always the current/active item.
- */
-async function getHistoryQueue() {
-  const saved = await storageGet([STORAGE_KEYS.history]);
-  return coerceTextArray(saved?.[STORAGE_KEYS.history]);
+// Get the current history array from storage
+async function getHistory() {
+  const saved = await storageGet([STORAGE_KEY]);
+  return coerceTextArray(saved?.[STORAGE_KEY]);
 }
 
-/**
- * Get the current (most recent) item from history.
- * Returns empty string if history is empty.
- */
-function getCurrentFromHistory(queue) {
-  if (!queue || queue.length === 0) return '';
-  return queue[queue.length - 1];
-}
+// Save history to storage, enforcing HISTORY_LIMIT
+async function setHistory(history) {
+  const queue = coerceTextArray(history);
 
-/**
- * Populate the history dropdown.
- * 
- * Storage order: [oldest, ..., newest] - last item is current QR
- * Dropdown order: [newest, ..., oldest] - reversed so current QR item appears at top
- * 
- * Example: array [0,1,2,3] -> dropdown shows 3,2,1,0 (3 is at top, matching current QR)
- */
-function populateHistorySelect(queue) {
-  const currentValue = historySelect.value;
-
-  historySelect.innerHTML = '';
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = 'Recent items…';
-  historySelect.appendChild(placeholder);
-
-  // Reverse so newest (last in array) appears first in dropdown
-  const displayItems = queue.slice(-HISTORY_SELECT_LIMIT).reverse();
-  displayItems.forEach((item) => {
-    const opt = document.createElement('option');
-    opt.value = item;
-    opt.textContent = truncateLabel(item);
-    historySelect.appendChild(opt);
-  });
-
-  // Keep selection if still present
-  if (currentValue && queue.includes(currentValue)) {
-    historySelect.value = currentValue;
-  } else {
-    historySelect.value = '';
-  }
-}
-
-/**
- * Push an item to the history queue.
- * - If item already exists, it's moved to the end (newest position)
- * - If max limit reached, oldest item is shifted out
- * - Returns the updated queue
- * 
- * Example: array [0,1,2,3] + push(1) -> [0,2,3,1] (1 moves to end)
- * Example: array [0,1,2,3] + push(5) -> [0,1,2,3,5] (5 added at end)
- */
-async function pushToHistory(text) {
-  const trimmed = normalizeText(text);
-  if (!trimmed) return await getHistoryQueue();
-
-  const existingQueue = await getHistoryQueue();
-
-  // Remove if exists (moves item to end), then push to end
-  let nextQueue = existingQueue.filter((h) => h !== trimmed);
-  nextQueue.push(trimmed);
-
-  // Enforce limit by shifting oldest items
-  if (nextQueue.length > HISTORY_LIMIT) {
-    nextQueue = nextQueue.slice(nextQueue.length - HISTORY_LIMIT);
+  // If length exceeds limit, splice from beginning
+  if (queue.length > HISTORY_LIMIT) {
+    queue.splice(0, queue.length - HISTORY_LIMIT);
   }
 
-  let didEvictForQuota = false;
-  while (true) {
-    try {
-      await storageSet({
-        [STORAGE_KEYS.history]: nextQueue
-      });
-      break;
-    } catch (err) {
-      if (isQuotaError(err) && nextQueue.length > 1) {
-        // Storage full: shift oldest items until it fits
-        nextQueue = nextQueue.slice(1);
-        didEvictForQuota = true;
-        continue;
-      }
-
-      console.error('Failed saving history:', err);
-      showStatus('Could not save to history (storage full?)', 'error');
-      return existingQueue;
-    }
-  }
-
-  populateHistorySelect(nextQueue);
-  if (didEvictForQuota) {
-    showStatus('Storage full: dropped oldest history item(s)', '');
-  }
-
-  return nextQueue;
+  await storageSet({ [STORAGE_KEY]: queue });
+  return queue;
 }
 
-/**
- * Generate QR code for the given text.
- */
-function generateQRCode(text) {
-  const normalized = normalizeText(text);
-  qrCodeContainer.innerHTML = '';
+// Add an item to history (trimmed, removes duplicates, moves to end)
+async function addToHistory(text) {
+  const trimmed = trimmedText(text);
+  if (!trimmed) return;
 
-  if (!normalized) {
-    qrCodeContainer.classList.add('hidden');
-    emptyMessage.classList.remove('hidden');
+  const history = await getHistory();
+
+  // Remove if already exists (to avoid duplicates)
+  const filtered = history.filter((h) => h !== trimmed);
+
+  // Push to end
+  filtered.push(trimmed);
+
+  // Save and update dropdown
+  const updated = await setHistory(filtered);
+  populateHistoryDropdown(updated);
+}
+
+// Move an item from its current position to the end of history
+async function moveToEnd(text) {
+  const trimmed = trimmedText(text);
+  if (!trimmed) return;
+
+  const history = await getHistory();
+  const index = history.indexOf(trimmed);
+
+  // If not found, just add it
+  if (index === -1) {
+    await addToHistory(trimmed);
     return;
   }
 
-  qrCodeContainer.classList.remove('hidden');
-  emptyMessage.classList.add('hidden');
+  // Remove from current position and push to end
+  history.splice(index, 1);
+  history.push(trimmed);
 
-  try {
-    qrCodeInstance = new QRCode(qrCodeContainer, {
-      text: normalized,
-      width: 150,
-      height: 150,
-      colorDark: '#000000',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
-    });
-    showStatus('QR code generated', 'success');
-  } catch (error) {
-    showStatus('Error generating QR code', 'error');
-    console.error('QR Code generation error:', error);
+  // Save and update dropdown
+  const updated = await setHistory(history);
+  populateHistoryDropdown(updated);
+}
+
+// Populate the history dropdown
+function populateHistoryDropdown(history) {
+  // Clear existing options except the first one
+  historyDropdown.innerHTML = '<option value="">Recent items…</option>';
+
+  // Add history items in reverse order (newest first)
+  for (let i = history.length - 1; i >= 0; i--) {
+    const item = history[i];
+    const option = document.createElement("option");
+    option.value = item;
+    option.textContent = truncateLabel(item);
+    historyDropdown.appendChild(option);
   }
 }
 
-/**
- * Show status message with optional type (success/error).
- */
-function showStatus(message, type = '') {
+// Generate or update QR code
+function generateQRCode(text) {
+  const normalized = trimmedText(text);
+  if (!normalized) {
+    // Clear existing QR code
+    if (qrCodeInstance) {
+      qrCodeInstance.clear();
+      qrCodeInstance = null;
+    }
+    qrCodeContainer.innerHTML = "";
+    qrCodeContainer.classList.add("hidden");
+    emptyMessage.classList.remove("hidden");
+    return;
+  }
+
+  qrCodeContainer.classList.remove("hidden");
+  emptyMessage.classList.add("hidden");
+
+  try {
+    // Reuse existing instance if available, otherwise create a new one
+    if (qrCodeInstance) {
+      // Update the QR code with new text
+      qrCodeInstance.makeCode(normalized);
+    } else {
+      // Create a new QRCode instance
+      qrCodeInstance = new QRCode(qrCodeContainer, {
+        text: normalized,
+        width: 150,
+        height: 150,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    }
+  } catch (error) {
+    showStatus("Error generating QR code", "error");
+    console.error("QR Code generation error:", error);
+  }
+}
+
+// Show status message
+function showStatus(message, type = "") {
   statusEl.textContent = message;
-  statusEl.className = 'status';
+  statusEl.className = "status";
   if (type) {
     statusEl.classList.add(type);
   }
 
+  // Clear status after 2 seconds
   setTimeout(() => {
-    statusEl.textContent = '';
-    statusEl.className = 'status';
+    statusEl.textContent = "";
+    statusEl.className = "status";
   }, 2000);
 }
 
-/**
- * Set the text input value and generate QR code.
- */
-function setTextAndGenerate(text) {
-  const normalized = normalizeText(text);
-  textInput.value = normalized;
-  generateQRCode(normalized);
-}
-
-/**
- * Push text to history and generate QR from the last item.
- * This is the core function - QR always reflects the last item in history.
- */
-async function pushAndGenerateQR(text, statusMessage = '') {
-  const queue = await pushToHistory(text);
-  const current = getCurrentFromHistory(queue);
-  setTextAndGenerate(current);
-  if (statusMessage) {
-    showStatus(statusMessage, 'success');
-  }
-  return queue;
-}
-
-/**
- * Read from clipboard and push to history.
- * QR is generated from the new last item in history.
- */
-async function readClipboard() {
-  try {
-    const text = await navigator.clipboard.readText();
-    if (text) {
-      const normalized = normalizeText(text);
-      await pushAndGenerateQR(normalized, 'Loaded from clipboard');
-    } else {
-      showStatus('Clipboard is empty', '');
-    }
-  } catch (error) {
-    console.log('Could not read clipboard:', error);
-    showStatus('Click in the text area to paste', '');
-  }
-}
-
-/**
- * Load and display the last saved state.
- * QR is generated from the last item in history.
- */
-async function loadFromHistory() {
-  const queue = await getHistoryQueue();
-  populateHistorySelect(queue);
-
-  const current = getCurrentFromHistory(queue);
-  if (current) {
-    setTextAndGenerate(current);
-    showStatus('Loaded last text', 'success');
-  }
+// Handle text input changes - ONLY generates QR code
+function handleInputChange() {
+  generateQRCode(textInput.value);
 }
 
 // Debounce function to avoid too many operations
@@ -273,59 +187,97 @@ function debounce(func, wait) {
   };
 }
 
-// Handle text input changes - generate QR immediately
-function handleInputChange() {
-  const text = textInput.value;
-  generateQRCode(text);
-}
-
-// Debounced handlers
+// Debounced handler for saving to history (trims text once after typing)
 const debouncedInputChange = debounce(handleInputChange, 300);
+const debouncedSave = debounce(async () => {
+  const trimmed = trimmedText(textInput.value);
+  if (!trimmed) return;
 
-// Save to history after user stops typing
-const debouncedSaveToHistory = debounce(async () => {
-  const normalized = normalizeText(textInput.value);
-  if (normalized) {
-    await pushToHistory(normalized);
-  }
+  await addToHistory(trimmed);
 }, 600);
 
-// Event listeners
+// Load initial state
+async function loadInitialState() {
+  const history = await getHistory();
 
-// Text input: generate QR on each change, save to history after delay
-textInput.addEventListener('input', () => {
+  // Populate dropdown
+  populateHistoryDropdown(history);
+
+  // Small delay to ensure clipboard API is ready
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  // Try to read clipboard first (opening popup is a user gesture)
+  try {
+    const text = await navigator.clipboard.readText();
+
+    if (text) {
+      const trimmed = trimmedText(text);
+      if (trimmed) {
+        // Update text input
+        textInput.value = trimmed;
+
+        // Update history
+        await addToHistory(trimmed);
+
+        // Generate QR code
+        generateQRCode(trimmed);
+
+        showStatus("Loaded from clipboard", "success");
+        return;
+      }
+    }
+  } catch (error) {
+    // Clipboard access denied or failed - fall through to history
+    console.error("Could not read clipboard:", error);
+  }
+
+  // Fall back to history if clipboard is empty or failed
+  if (history.length > 0) {
+    textInput.value = history[history.length - 1];
+    generateQRCode(textInput.value);
+    return;
+  }
+
+  // No history and no clipboard, show empty state
+  textInput.value = "";
+  generateQRCode("");
+}
+
+// Event listeners
+textInput.addEventListener("input", () => {
   debouncedInputChange();
-  debouncedSaveToHistory();
+  debouncedSave();
 });
 
-// Paste: immediately process and save
-textInput.addEventListener('paste', () => {
+textInput.addEventListener("paste", async () => {
+  // Wait for paste to apply to textarea value
   setTimeout(async () => {
-    const normalized = normalizeText(textInput.value);
-    if (normalized) {
-      await pushAndGenerateQR(normalized);
-    }
+    const trimmed = trimmedText(textInput.value);
+    if (!trimmed) return;
+
+    textInput.value = trimmed;
+    await addToHistory(trimmed);
   }, 0);
 });
 
-// History dropdown: selecting an item moves it to the end of array and generates QR
-// Example: array [0,1,2,3], select "1" -> array becomes [0,2,3,1], QR shows "1"
-historySelect.addEventListener('change', async () => {
-  const val = historySelect.value;
+// History dropdown change handler
+historyDropdown.addEventListener("change", async () => {
+  const val = historyDropdown.value;
   if (!val) return;
 
-  // Push selected item to history (moves it to end) and generate QR from last item
-  await pushAndGenerateQR(val, 'Loaded from history');
+  // Set textInput.value to selected item
+  textInput.value = val;
 
-  // Reset dropdown to placeholder after selection
-  historySelect.value = '';
+  // Move selected item to end of array
+  await moveToEnd(val);
+
+  // Generate QR code
+  generateQRCode(val);
+
+  showStatus("Loaded from history", "success");
 });
 
-// On popup open: load from history, then try to read clipboard
-document.addEventListener('DOMContentLoaded', () => {
-  loadFromHistory().finally(() => {
-    // Try to read clipboard - if successful, it will push to history
-    // and update the QR to the new clipboard content
-    readClipboard();
-  });
+// Initialize when popup opens
+document.addEventListener("DOMContentLoaded", () => {
+  loadInitialState();
 });
