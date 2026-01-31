@@ -1,37 +1,39 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clipboard QR Code</title>
-  <link rel="stylesheet" href="popup.css">
-</head>
-<body>
-  <div class="container">
-    <h1>Clipboard QR Code</h1>
-    
-    <div id="qr-container">
-      <div id="qr-code"></div>
-      <p id="empty-message" class="hidden">Enter text below to generate a QR code</p>
-    </div>
-    
-    <div class="input-section">
-      <div class="history-row">
-        <select id="history-select" aria-label="Recent clipboard items">
-          <option value="">Recent items…</option>
-        </select>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clipboard QR Code</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Clipboard QR Code</h1>
+
+      <div id="qr-container">
+        <div id="qr-code"></div>
+        <p id="empty-message" class="hidden">
+          Enter text below to generate a QR code
+        </p>
       </div>
-      <textarea 
-        id="text-input" 
-        placeholder="Paste or type text here..."
-        rows="3"
-      ></textarea>
+
+      <div class="input-section">
+        <div class="history-row">
+          <select id="history-dropdown" aria-label="Recent clipboard items">
+            <option value="">Recent items…</option>
+          </select>
+        </div>
+        <textarea
+          id="text-input"
+          placeholder="Paste or type text here..."
+          rows="3"
+        ></textarea>
+      </div>
+
+      <p id="status" class="status"></p>
     </div>
-    
-    <p id="status" class="status"></p>
-  </div>
-  
-  <script src="qrcode.js"></script>
-  <script src="popup.js"></script>
-</body>
+
+    <script src="qrcode.js"></script>
+    <script src="popup.js"></script>
+  </body>
 </html>
