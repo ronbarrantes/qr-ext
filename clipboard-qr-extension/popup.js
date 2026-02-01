@@ -8,6 +8,8 @@ const historyDropdown = document.getElementById("history-dropdown");
 let qrCodeInstance = null;
 
 const STORAGE_KEY = "clipboardHistory";
+const CURRENT_TEXT_KEY = "currentText";
+const LAST_CLIPBOARD_KEY = "lastClipboard";
 const HISTORY_LIMIT = 10;
 const shared = globalThis.ClipboardQrShared;
 const enqueueHistoryWrite = shared?.createSerialQueue?.() ?? ((fn) => Promise.resolve().then(fn));
@@ -212,52 +214,81 @@ const debouncedSave = debounce(async () => {
   const trimmed = trimmedText(textInput.value);
   if (!trimmed) return;
 
+  // Save both to history and as current text
   await addToHistory(trimmed);
+  await storageSet({ [CURRENT_TEXT_KEY]: trimmed });
 }, 600);
 
 // Load initial state
 async function loadInitialState() {
-  const history = await getHistory();
+  // Load all stored state
+  const stored = await storageGet([STORAGE_KEY, CURRENT_TEXT_KEY, LAST_CLIPBOARD_KEY]);
+  const history = coerceTextArray(stored?.[STORAGE_KEY]);
+  const currentText = trimmedText(stored?.[CURRENT_TEXT_KEY]);
+  const lastClipboard = trimmedText(stored?.[LAST_CLIPBOARD_KEY]);
 
-  // Populate dropdown
+  // Populate dropdown with existing history
   populateHistoryDropdown(history);
 
   // Small delay to ensure clipboard API is ready
   await new Promise((resolve) => setTimeout(resolve, 50));
 
-  // Try to read clipboard first (opening popup is a user gesture)
+  // Try to read clipboard
+  let newClipboard = "";
   try {
     const text = await navigator.clipboard.readText();
-
-    if (text) {
-      const trimmed = trimmedText(text);
-      if (trimmed) {
-        // Update text input
-        textInput.value = trimmed;
-
-        // Update history
-        await addToHistory(trimmed);
-
-        // Generate QR code
-        generateQRCode(trimmed);
-
-        showStatus("Loaded from clipboard", "success");
-        return;
-      }
-    }
+    newClipboard = trimmedText(text);
   } catch (error) {
-    // Clipboard access denied or failed - fall through to history
+    // Clipboard access denied or failed
     console.error("Could not read clipboard:", error);
   }
 
-  // Fall back to history if clipboard is empty or failed
+  // Use computeInitialState to determine what to display
+  const computeFn = shared?.computeInitialState;
+  if (computeFn) {
+    const result = computeFn({
+      lastClipboard,
+      currentText,
+      newClipboard,
+      history,
+      limit: HISTORY_LIMIT,
+    });
+
+    // Update text input
+    textInput.value = result.displayText;
+    generateQRCode(result.displayText);
+
+    // Save updated state
+    await storageSet({
+      [STORAGE_KEY]: result.newHistory,
+      [CURRENT_TEXT_KEY]: result.newCurrentText,
+      [LAST_CLIPBOARD_KEY]: result.newLastClipboard,
+    });
+
+    // Update dropdown if history changed
+    populateHistoryDropdown(result.newHistory);
+
+    if (result.clipboardChanged) {
+      showStatus("Loaded from clipboard", "success");
+    }
+    return;
+  }
+
+  // Fallback if shared module not available (shouldn't happen in extension)
+  if (newClipboard) {
+    textInput.value = newClipboard;
+    await addToHistory(newClipboard);
+    generateQRCode(newClipboard);
+    showStatus("Loaded from clipboard", "success");
+    return;
+  }
+
   if (history.length > 0) {
     textInput.value = history[history.length - 1];
     generateQRCode(textInput.value);
     return;
   }
 
-  // No history and no clipboard, show empty state
   textInput.value = "";
   generateQRCode("");
 }
@@ -276,6 +307,7 @@ textInput.addEventListener("paste", async () => {
 
     textInput.value = trimmed;
     await addToHistory(trimmed);
+    await storageSet({ [CURRENT_TEXT_KEY]: trimmed });
   }, 0);
 });
 
@@ -289,6 +321,9 @@ historyDropdown.addEventListener("change", async () => {
 
   // Move selected item to end of array
   await moveToEnd(val);
+
+  // Save as current text
+  await storageSet({ [CURRENT_TEXT_KEY]: val });
 
   // Generate QR code
   generateQRCode(val);

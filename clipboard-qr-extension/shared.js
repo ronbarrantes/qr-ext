@@ -91,12 +91,86 @@
     return "";
   }
 
+  /**
+   * Computes the initial state when the popup opens.
+   * 
+   * Logic:
+   * - If clipboard text is different from lastClipboard, user copied something new
+   *   → show new clipboard, add it to history
+   * - If clipboard text is same as lastClipboard (or empty/failed), user hasn't copied new
+   *   → show currentText (their edited text) or fall back to history
+   * 
+   * @param {object} opts
+   * @param {string} opts.lastClipboard - The last clipboard text we observed
+   * @param {string} opts.currentText - The saved text from the textbox
+   * @param {string} opts.newClipboard - The current clipboard content (may be empty if read failed)
+   * @param {string[]} opts.history - The existing history array
+   * @param {number} opts.limit - The history limit
+   * @returns {object} { displayText, newHistory, newLastClipboard, newCurrentText, clipboardChanged }
+   */
+  function computeInitialState(opts) {
+    const {
+      lastClipboard = "",
+      currentText = "",
+      newClipboard = "",
+      history = [],
+      limit = 10,
+    } = opts || {};
+
+    const trimmedLastClipboard = trimmedText(lastClipboard);
+    const trimmedCurrentText = trimmedText(currentText);
+    const trimmedNewClipboard = trimmedText(newClipboard);
+    const cleanHistory = coerceTextArray(history);
+
+    // Case 1: Clipboard has new content (different from last time)
+    if (trimmedNewClipboard && trimmedNewClipboard !== trimmedLastClipboard) {
+      // First, if there was an edited currentText different from lastClipboard, 
+      // ensure it's in history (the user edited something before copying new)
+      let updatedHistory = cleanHistory;
+      if (trimmedCurrentText && trimmedCurrentText !== trimmedLastClipboard) {
+        updatedHistory = updateHistory(updatedHistory, trimmedCurrentText, limit);
+      }
+      // Then add the new clipboard content
+      updatedHistory = updateHistory(updatedHistory, trimmedNewClipboard, limit);
+
+      return {
+        displayText: trimmedNewClipboard,
+        newHistory: updatedHistory,
+        newLastClipboard: trimmedNewClipboard,
+        newCurrentText: trimmedNewClipboard,
+        clipboardChanged: true,
+      };
+    }
+
+    // Case 2: Clipboard is same as last time (or empty/failed) - show saved currentText
+    if (trimmedCurrentText) {
+      return {
+        displayText: trimmedCurrentText,
+        newHistory: cleanHistory,
+        newLastClipboard: trimmedLastClipboard,
+        newCurrentText: trimmedCurrentText,
+        clipboardChanged: false,
+      };
+    }
+
+    // Case 3: No currentText saved, fall back to most recent history item
+    const fallback = cleanHistory.length > 0 ? cleanHistory[cleanHistory.length - 1] : "";
+    return {
+      displayText: fallback,
+      newHistory: cleanHistory,
+      newLastClipboard: trimmedLastClipboard,
+      newCurrentText: fallback,
+      clipboardChanged: false,
+    };
+  }
+
   return {
     trimmedText,
     coerceTextArray,
     updateHistory,
     createSerialQueue,
     extractCopiedTextFromCopyEvent,
+    computeInitialState,
   };
 });
 
