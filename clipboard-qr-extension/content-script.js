@@ -3,14 +3,8 @@
 const STORAGE_KEY = "clipboardHistory";
 const HISTORY_LIMIT = 10;
 
-function trimmedText(text) {
-  return (text ?? "").toString().trim();
-}
-
-function coerceTextArray(value) {
-  if (!Array.isArray(value)) return [];
-  return value.map(trimmedText).filter(Boolean);
-}
+const shared = globalThis.ClipboardQrShared;
+const enqueueHistoryWrite = shared?.createSerialQueue?.() ?? ((fn) => Promise.resolve().then(fn));
 
 function storageGet(keys) {
   return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
@@ -28,11 +22,11 @@ function storageSet(obj) {
 
 async function getHistory() {
   const saved = await storageGet([STORAGE_KEY]);
-  return coerceTextArray(saved?.[STORAGE_KEY]);
+  return shared?.coerceTextArray?.(saved?.[STORAGE_KEY]) ?? [];
 }
 
 async function setHistory(history) {
-  const queue = coerceTextArray(history);
+  const queue = (shared?.coerceTextArray?.(history) ?? []).slice();
   if (queue.length > HISTORY_LIMIT) {
     queue.splice(0, queue.length - HISTORY_LIMIT);
   }
@@ -41,37 +35,15 @@ async function setHistory(history) {
 }
 
 async function addToHistory(text) {
-  const trimmed = trimmedText(text);
-  if (!trimmed) return;
+  const t = shared?.trimmedText?.(text) ?? "";
+  if (!t) return;
 
-  const history = await getHistory();
-
-  // Remove duplicates and push newest to end (matches popup behavior)
-  const filtered = history.filter((h) => h !== trimmed);
-  filtered.push(trimmed);
-
-  await setHistory(filtered);
-}
-
-async function readCopiedTextFromEvent(e) {
-  try {
-    const fromEvent = e?.clipboardData?.getData?.("text/plain");
-    const t = trimmedText(fromEvent);
-    if (t) return t;
-  } catch {
-    // ignore
-  }
-
-  // Fallback: try clipboard API (may fail on some sites)
-  try {
-    const fromClipboard = await navigator.clipboard.readText();
-    const t = trimmedText(fromClipboard);
-    if (t) return t;
-  } catch {
-    // ignore
-  }
-
-  return "";
+  // Serialize read-modify-write to avoid losing intermediate copies.
+  await enqueueHistoryWrite(async () => {
+    const history = await getHistory();
+    const updated = shared?.updateHistory?.(history, t, HISTORY_LIMIT) ?? history;
+    await storageSet({ [STORAGE_KEY]: updated });
+  });
 }
 
 document.addEventListener(
@@ -80,7 +52,7 @@ document.addEventListener(
     // Fire-and-forget; never block the user's copy.
     void (async () => {
       try {
-        const text = await readCopiedTextFromEvent(e);
+        const text = shared?.extractCopiedTextFromCopyEvent?.(e, document) ?? "";
         if (!text) return;
         await addToHistory(text);
       } catch (err) {

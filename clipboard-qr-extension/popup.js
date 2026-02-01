@@ -9,6 +9,8 @@ let qrCodeInstance = null;
 
 const STORAGE_KEY = "clipboardHistory";
 const HISTORY_LIMIT = 10;
+const shared = globalThis.ClipboardQrShared;
+const enqueueHistoryWrite = shared?.createSerialQueue?.() ?? ((fn) => Promise.resolve().then(fn));
 
 function storageGet(keys) {
   return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
@@ -25,7 +27,7 @@ function storageSet(obj) {
 }
 
 function trimmedText(text) {
-  return (text ?? "").toString().trim();
+  return shared?.trimmedText?.(text) ?? (text ?? "").toString().trim();
 }
 
 function truncateLabel(text, maxLen = 60) {
@@ -35,8 +37,7 @@ function truncateLabel(text, maxLen = 60) {
 }
 
 function coerceTextArray(value) {
-  if (!Array.isArray(value)) return [];
-  return value.map(trimmedText).filter(Boolean);
+  return shared?.coerceTextArray?.(value) ?? (Array.isArray(value) ? value.map(trimmedText).filter(Boolean) : []);
 }
 
 // Get the current history array from storage
@@ -63,17 +64,22 @@ async function addToHistory(text) {
   const trimmed = trimmedText(text);
   if (!trimmed) return;
 
-  const history = await getHistory();
-
-  // Remove if already exists (to avoid duplicates)
-  const filtered = history.filter((h) => h !== trimmed);
-
-  // Push to end
-  filtered.push(trimmed);
-
-  // Save and update dropdown
-  const updated = await setHistory(filtered);
-  populateHistoryDropdown(updated);
+  // Serialize read-modify-write to avoid losing intermediate updates.
+  await enqueueHistoryWrite(async () => {
+    const history = await getHistory();
+    const updatedArr =
+      shared?.updateHistory?.(history, trimmed, HISTORY_LIMIT) ??
+      (() => {
+        const filtered = history.filter((h) => h !== trimmed);
+        filtered.push(trimmed);
+        if (filtered.length > HISTORY_LIMIT) {
+          filtered.splice(0, filtered.length - HISTORY_LIMIT);
+        }
+        return filtered;
+      })();
+    const updated = await setHistory(updatedArr);
+    populateHistoryDropdown(updated);
+  });
 }
 
 // Move an item from its current position to the end of history
@@ -81,22 +87,35 @@ async function moveToEnd(text) {
   const trimmed = trimmedText(text);
   if (!trimmed) return;
 
-  const history = await getHistory();
-  const index = history.indexOf(trimmed);
+  await enqueueHistoryWrite(async () => {
+    const history = await getHistory();
+    const index = history.indexOf(trimmed);
 
-  // If not found, just add it
-  if (index === -1) {
-    await addToHistory(trimmed);
-    return;
-  }
+    // If not found, just add it
+    if (index === -1) {
+      const updated = await setHistory(
+        shared?.updateHistory?.(history, trimmed, HISTORY_LIMIT) ??
+          (() => {
+            const filtered = history.filter((h) => h !== trimmed);
+            filtered.push(trimmed);
+            if (filtered.length > HISTORY_LIMIT) {
+              filtered.splice(0, filtered.length - HISTORY_LIMIT);
+            }
+            return filtered;
+          })()
+      );
+      populateHistoryDropdown(updated);
+      return;
+    }
 
-  // Remove from current position and push to end
-  history.splice(index, 1);
-  history.push(trimmed);
+    // Remove from current position and push to end
+    history.splice(index, 1);
+    history.push(trimmed);
 
-  // Save and update dropdown
-  const updated = await setHistory(history);
-  populateHistoryDropdown(updated);
+    // Save and update dropdown
+    const updated = await setHistory(history);
+    populateHistoryDropdown(updated);
+  });
 }
 
 // Populate the history dropdown
