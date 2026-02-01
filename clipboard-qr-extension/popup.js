@@ -222,16 +222,27 @@ function debounce(func, wait) {
   return executedFunction;
 }
 
-// Debounced handler for saving to history (trims text once after typing)
+// Debounced handler for QR code generation
 const debouncedInputChange = debounce(handleInputChange, 300);
-const debouncedSave = debounce(async () => {
+
+// Debounced handler for saving to history (avoid too many array operations)
+const debouncedHistorySave = debounce(async () => {
   const trimmed = trimmedText(textInput.value);
   if (!trimmed) return;
-
-  // Save both to history and as current text
   await addToHistory(trimmed);
-  await storageSet({ [CURRENT_TEXT_KEY]: trimmed });
 }, 600);
+
+// Save currentText immediately (fire-and-forget) - this is critical for persistence
+// We don't debounce this because it's just one small value and must be saved
+// before the popup closes
+function saveCurrentTextImmediately() {
+  const trimmed = trimmedText(textInput.value);
+  if (!trimmed) return;
+  // Fire-and-forget: don't await, just ensure it's queued
+  storageSet({ [CURRENT_TEXT_KEY]: trimmed }).catch((err) => {
+    console.error("Failed to save current text:", err);
+  });
+}
 
 // Load initial state
 async function loadInitialState() {
@@ -310,7 +321,8 @@ async function loadInitialState() {
 // Event listeners
 textInput.addEventListener("input", () => {
   debouncedInputChange();
-  debouncedSave();
+  saveCurrentTextImmediately(); // Save currentText immediately (not debounced)
+  debouncedHistorySave(); // History can be debounced
 });
 
 textInput.addEventListener("paste", async () => {
@@ -320,8 +332,8 @@ textInput.addEventListener("paste", async () => {
     if (!trimmed) return;
 
     textInput.value = trimmed;
+    saveCurrentTextImmediately();
     await addToHistory(trimmed);
-    await storageSet({ [CURRENT_TEXT_KEY]: trimmed });
   }, 0);
 });
 
@@ -336,8 +348,8 @@ historyDropdown.addEventListener("change", async () => {
   // Move selected item to end of array
   await moveToEnd(val);
 
-  // Save as current text
-  await storageSet({ [CURRENT_TEXT_KEY]: val });
+  // Save as current text (fire-and-forget)
+  saveCurrentTextImmediately();
 
   // Generate QR code
   generateQRCode(val);
@@ -345,9 +357,10 @@ historyDropdown.addEventListener("change", async () => {
   showStatus("Loaded from history", "success");
 });
 
-// Flush pending saves when popup is about to close
+// Flush pending history saves when popup is about to close
+// Note: currentText is saved immediately, so no need to flush it
 function flushPendingSaves() {
-  debouncedSave.flush();
+  debouncedHistorySave.flush();
 }
 
 // Listen for popup close events
