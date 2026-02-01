@@ -196,16 +196,30 @@ function handleInputChange() {
 }
 
 // Debounce function to avoid too many operations
+// Returns a function with a .flush() method to force immediate execution
 function debounce(func, wait) {
   let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
+  let pendingArgs = null;
+
+  function executedFunction(...args) {
+    pendingArgs = args;
     clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
+    timeout = setTimeout(() => {
+      pendingArgs = null;
+      func(...args);
+    }, wait);
+  }
+
+  executedFunction.flush = function () {
+    if (pendingArgs !== null) {
+      clearTimeout(timeout);
+      const args = pendingArgs;
+      pendingArgs = null;
+      func(...args);
+    }
   };
+
+  return executedFunction;
 }
 
 // Debounced handler for saving to history (trims text once after typing)
@@ -329,6 +343,20 @@ historyDropdown.addEventListener("change", async () => {
   generateQRCode(val);
 
   showStatus("Loaded from history", "success");
+});
+
+// Flush pending saves when popup is about to close
+function flushPendingSaves() {
+  debouncedSave.flush();
+}
+
+// Listen for popup close events
+window.addEventListener("pagehide", flushPendingSaves);
+window.addEventListener("beforeunload", flushPendingSaves);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    flushPendingSaves();
+  }
 });
 
 // Initialize when popup opens
