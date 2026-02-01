@@ -2,21 +2,18 @@
   color-scheme: dark;
 
   --bg: #0b0f17;
-  --bg2: #070a10;
-  --surface: #0f172a;
-  --surface2: #111c33;
+  --surface: #111827;
   --text: #e5e7eb;
   --muted: #9aa4b2;
-  --border: rgba(148, 163, 184, 0.18);
-  --shadow: 0 10px 35px rgba(0, 0, 0, 0.45);
-  --shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.35);
+  --border: rgba(148, 163, 184, 0.2);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-soft: 0 4px 14px rgba(0, 0, 0, 0.3);
 
   --accent: #7c3aed;
-  --accent2: #22d3ee;
-  --ring: rgba(124, 58, 237, 0.45);
+  --ring: rgba(124, 58, 237, 0.32);
 
-  --radius: 16px;
-  --radius-sm: 12px;
+  --radius: 14px;
+  --radius-sm: 10px;
 }
 
 *,
@@ -33,7 +30,7 @@ body {
 body {
   margin: 0;
   padding: 0;
-  min-width: 340px;
+  min-width: 320px;
 
   font-family:
     ui-sans-serif,
@@ -47,23 +44,20 @@ body {
     "Apple Color Emoji",
     "Segoe UI Emoji";
   color: var(--text);
-  background:
-    radial-gradient(120% 120% at 15% 0%, rgba(124, 58, 237, 0.16) 0%, transparent 45%),
-    radial-gradient(100% 120% at 90% 20%, rgba(34, 211, 238, 0.12) 0%, transparent 42%),
-    linear-gradient(180deg, var(--bg), var(--bg2));
+  background: var(--bg);
 }
 
 .container {
-  padding: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 12px;
+  gap: 10px;
 }
 
 h1 {
   margin: 0;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 650;
   letter-spacing: 0.2px;
   text-align: center;
@@ -71,17 +65,19 @@ h1 {
 }
 
 #qr-container {
-  width: 100%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  inline-size: min(196px, 100%);
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 14px;
+  padding: 10px;
 
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 196px;
 }
 
 #qr-code {
@@ -90,8 +86,8 @@ h1 {
   align-items: center;
 
   background: #ffffff;
-  border-radius: 14px;
-  padding: 10px;
+  border-radius: 12px;
+  padding: 8px;
   box-shadow: var(--shadow-soft);
 }
 
@@ -104,8 +100,8 @@ h1 {
 #empty-message {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: 12.5px;
+  line-height: 1.4;
   text-align: center;
   padding: 10px 12px;
 }
@@ -117,7 +113,7 @@ h1 {
 .input-section {
   width: 100%;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .history-row {
@@ -132,21 +128,21 @@ h1 {
   width: 100%;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: rgba(17, 28, 51, 0.75);
+  background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
   outline: none;
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
-    transform 0.06s ease;
+    background-color 0.18s ease;
 }
 
 #history-dropdown {
   flex: 1;
   min-width: 0;
-  padding: 9px 11px;
-  font-size: 12.5px;
+  padding: 9px 10px;
+  font-size: 13px;
 }
 
 #history-dropdown:focus,
@@ -168,12 +164,12 @@ h1 {
 }
 
 #text-input {
-  padding: 12px 12px;
+  padding: 10px 10px;
   font-size: 13.5px;
   font-family: inherit;
   resize: vertical;
-  min-height: 86px;
-  line-height: 1.35;
+  min-height: 80px;
+  line-height: 1.4;
 }
 
 #text-input::placeholder {
@@ -182,7 +178,7 @@ h1 {
 
 .status {
   margin: 0;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
   text-align: center;
   min-height: 16px;
@@ -201,10 +197,6 @@ h1 {
 }
 
 @media (max-width: 360px) {
-  body {
-    min-width: 320px;
-  }
-
   .history-row {
     flex-direction: column;
   }
