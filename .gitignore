@@ -131,4 +131,9 @@ $RECYCLE.BIN/
 # Build outputs
 dist/
 
+# Node (tests)
+node_modules/
+npm-debug.log*
+coverage/
+
 # End of https://www.toptal.com/developers/gitignore/api/windows,macos,linux,vim,visualstudiocode,git

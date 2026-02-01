@@ -4,7 +4,7 @@ EXTENSION_DIR = clipboard-qr-extension
 DIST_DIR = dist
 ZIP_FILE = $(DIST_DIR)/cb-qr-ext.zip
 
-.PHONY: clean zip verify all
+.PHONY: clean zip verify all test
 
 all: clean zip
 
@@ -27,3 +27,6 @@ verify: zip
 	@echo "Zip file contents:"
 	@unzip -l $(ZIP_FILE) | head -20
 	@echo "Zip file verified successfully"
+
+test:
+	@npm test
