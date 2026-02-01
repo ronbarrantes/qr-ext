@@ -79,9 +79,14 @@ document.addEventListener(
   (e) => {
     // Fire-and-forget; never block the user's copy.
     void (async () => {
-      const text = await readCopiedTextFromEvent(e);
-      if (!text) return;
-      await addToHistory(text);
+      try {
+        const text = await readCopiedTextFromEvent(e);
+        if (!text) return;
+        await addToHistory(text);
+      } catch (err) {
+        // Prevent unhandled promise rejections (e.g., storage quota exceeded).
+        console.debug("Clipboard QR Code: failed to store copy event", err);
+      }
     })();
   },
   true
