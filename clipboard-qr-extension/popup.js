@@ -7,12 +7,13 @@ const historyDropdown = document.getElementById("history-dropdown");
 
 let qrCodeInstance = null;
 
-const STORAGE_KEY = "clipboardHistory";
-const CURRENT_TEXT_KEY = "currentText";
-const LAST_CLIPBOARD_KEY = "lastClipboard";
+// Storage keys - simplified to just two
+const STORAGE_KEY = "clipboardHistory";       // string[] - history of items (newest at end)
+const LAST_SEEN_KEY = "lastSeenClipboard";    // string - clipboard content when we last read it
 const HISTORY_LIMIT = 10;
+
+// Shared utilities
 const shared = globalThis.ClipboardQrShared;
-const enqueueHistoryWrite = shared?.createSerialQueue?.() ?? ((fn) => Promise.resolve().then(fn));
 
 function storageGet(keys) {
   return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
@@ -42,90 +43,25 @@ function coerceTextArray(value) {
   return shared?.coerceTextArray?.(value) ?? (Array.isArray(value) ? value.map(trimmedText).filter(Boolean) : []);
 }
 
-// Get the current history array from storage
-async function getHistory() {
-  const saved = await storageGet([STORAGE_KEY]);
-  return coerceTextArray(saved?.[STORAGE_KEY]);
-}
-
-// Save history to storage, enforcing HISTORY_LIMIT
-async function setHistory(history) {
-  const queue = coerceTextArray(history);
-
-  // If length exceeds limit, splice from beginning
-  if (queue.length > HISTORY_LIMIT) {
-    queue.splice(0, queue.length - HISTORY_LIMIT);
+// Update history array: dedupe and add to end, enforce limit
+function updateHistoryArray(history, text) {
+  const trimmed = trimmedText(text);
+  if (!trimmed) return history;
+  
+  const filtered = history.filter(h => h !== trimmed);
+  filtered.push(trimmed);
+  
+  if (filtered.length > HISTORY_LIMIT) {
+    filtered.splice(0, filtered.length - HISTORY_LIMIT);
   }
-
-  await storageSet({ [STORAGE_KEY]: queue });
-  return queue;
-}
-
-// Add an item to history (trimmed, removes duplicates, moves to end)
-async function addToHistory(text) {
-  const trimmed = trimmedText(text);
-  if (!trimmed) return;
-
-  // Serialize read-modify-write to avoid losing intermediate updates.
-  await enqueueHistoryWrite(async () => {
-    const history = await getHistory();
-    const updatedArr =
-      shared?.updateHistory?.(history, trimmed, HISTORY_LIMIT) ??
-      (() => {
-        const filtered = history.filter((h) => h !== trimmed);
-        filtered.push(trimmed);
-        if (filtered.length > HISTORY_LIMIT) {
-          filtered.splice(0, filtered.length - HISTORY_LIMIT);
-        }
-        return filtered;
-      })();
-    const updated = await setHistory(updatedArr);
-    populateHistoryDropdown(updated);
-  });
-}
-
-// Move an item from its current position to the end of history
-async function moveToEnd(text) {
-  const trimmed = trimmedText(text);
-  if (!trimmed) return;
-
-  await enqueueHistoryWrite(async () => {
-    const history = await getHistory();
-    const index = history.indexOf(trimmed);
-
-    // If not found, just add it
-    if (index === -1) {
-      const updated = await setHistory(
-        shared?.updateHistory?.(history, trimmed, HISTORY_LIMIT) ??
-          (() => {
-            const filtered = history.filter((h) => h !== trimmed);
-            filtered.push(trimmed);
-            if (filtered.length > HISTORY_LIMIT) {
-              filtered.splice(0, filtered.length - HISTORY_LIMIT);
-            }
-            return filtered;
-          })()
-      );
-      populateHistoryDropdown(updated);
-      return;
-    }
-
-    // Remove from current position and push to end
-    history.splice(index, 1);
-    history.push(trimmed);
-
-    // Save and update dropdown
-    const updated = await setHistory(history);
-    populateHistoryDropdown(updated);
-  });
+  return filtered;
 }
 
 // Populate the history dropdown
 function populateHistoryDropdown(history) {
-  // Clear existing options except the first one
   historyDropdown.innerHTML = '<option value="">Recent items…</option>';
-
-  // Add history items in reverse order (newest first)
+  
+  // Add history items in reverse order (newest first in dropdown)
   for (let i = history.length - 1; i >= 0; i--) {
     const item = history[i];
     const option = document.createElement("option");
@@ -139,7 +75,6 @@ function populateHistoryDropdown(history) {
 function generateQRCode(text) {
   const normalized = trimmedText(text);
   if (!normalized) {
-    // Clear existing QR code
     if (qrCodeInstance) {
       qrCodeInstance.clear();
       qrCodeInstance = null;
@@ -154,12 +89,9 @@ function generateQRCode(text) {
   emptyMessage.classList.add("hidden");
 
   try {
-    // Reuse existing instance if available, otherwise create a new one
     if (qrCodeInstance) {
-      // Update the QR code with new text
       qrCodeInstance.makeCode(normalized);
     } else {
-      // Create a new QRCode instance
       qrCodeInstance = new QRCode(qrCodeContainer, {
         text: normalized,
         width: 150,
@@ -182,21 +114,35 @@ function showStatus(message, type = "") {
   if (type) {
     statusEl.classList.add(type);
   }
-
-  // Clear status after 2 seconds
   setTimeout(() => {
     statusEl.textContent = "";
     statusEl.className = "status";
   }, 2000);
 }
 
-// Handle text input changes - ONLY generates QR code
-function handleInputChange() {
-  generateQRCode(textInput.value);
+// Copy text to system clipboard
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (error) {
+    console.error("Failed to copy to clipboard:", error);
+    return false;
+  }
 }
 
-// Debounce function to avoid too many operations
-// Returns a function with a .flush() method to force immediate execution
+// Read from system clipboard
+async function readClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    return trimmedText(text);
+  } catch (error) {
+    console.error("Could not read clipboard:", error);
+    return "";
+  }
+}
+
+// Debounce function with flush capability
 function debounce(func, wait) {
   let timeout;
   let pendingArgs = null;
@@ -222,148 +168,140 @@ function debounce(func, wait) {
   return executedFunction;
 }
 
-// Debounced handler for QR code generation
-const debouncedInputChange = debounce(handleInputChange, 300);
+// ============================================================================
+// CORE STATE MANAGEMENT
+// ============================================================================
 
-// Debounced handler for saving to history (avoid too many array operations)
-const debouncedHistorySave = debounce(async () => {
-  const trimmed = trimmedText(textInput.value);
-  if (!trimmed) return;
-  await addToHistory(trimmed);
-}, 600);
-
-// Save currentText immediately (fire-and-forget) - this is critical for persistence
-// We don't debounce this because it's just one small value and must be saved
-// before the popup closes
-function saveCurrentTextImmediately() {
-  const trimmed = trimmedText(textInput.value);
-  if (!trimmed) return;
-  // Fire-and-forget: don't await, just ensure it's queued
-  storageSet({ [CURRENT_TEXT_KEY]: trimmed }).catch((err) => {
-    console.error("Failed to save current text:", err);
-  });
+// Save state to storage (fire-and-forget for speed)
+function saveState(history, lastSeen) {
+  storageSet({
+    [STORAGE_KEY]: history,
+    [LAST_SEEN_KEY]: lastSeen,
+  }).catch(err => console.error("Failed to save state:", err));
 }
 
-// Load initial state
+// Save just the history (when editing, we don't update lastSeen)
+function saveHistoryOnly(history) {
+  storageSet({ [STORAGE_KEY]: history }).catch(err => console.error("Failed to save history:", err));
+}
+
+// Current in-memory state
+let currentHistory = [];
+let lastSeenClipboard = "";
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
 async function loadInitialState() {
-  // Load all stored state
-  const stored = await storageGet([STORAGE_KEY, CURRENT_TEXT_KEY, LAST_CLIPBOARD_KEY]);
-  const history = coerceTextArray(stored?.[STORAGE_KEY]);
-  const currentText = trimmedText(stored?.[CURRENT_TEXT_KEY]);
-  const lastClipboard = trimmedText(stored?.[LAST_CLIPBOARD_KEY]);
+  // Load stored state
+  const stored = await storageGet([STORAGE_KEY, LAST_SEEN_KEY]);
+  currentHistory = coerceTextArray(stored?.[STORAGE_KEY]);
+  lastSeenClipboard = trimmedText(stored?.[LAST_SEEN_KEY]);
 
-  // Populate dropdown with existing history
-  populateHistoryDropdown(history);
+  // Populate dropdown
+  populateHistoryDropdown(currentHistory);
 
-  // Small delay to ensure clipboard API is ready
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // Small delay for clipboard API
+  await new Promise(resolve => setTimeout(resolve, 50));
 
-  // Try to read clipboard
-  let newClipboard = "";
-  try {
-    const text = await navigator.clipboard.readText();
-    newClipboard = trimmedText(text);
-  } catch (error) {
-    // Clipboard access denied or failed
-    console.error("Could not read clipboard:", error);
-  }
+  // Read current clipboard
+  const clipboardContent = await readClipboard();
 
-  // Use computeInitialState to determine what to display
-  const computeFn = shared?.computeInitialState;
-  if (computeFn) {
-    const result = computeFn({
-      lastClipboard,
-      currentText,
-      newClipboard,
-      history,
-      limit: HISTORY_LIMIT,
-    });
-
-    // Update text input
-    textInput.value = result.displayText;
-    generateQRCode(result.displayText);
-
-    // Save updated state
-    await storageSet({
-      [STORAGE_KEY]: result.newHistory,
-      [CURRENT_TEXT_KEY]: result.newCurrentText,
-      [LAST_CLIPBOARD_KEY]: result.newLastClipboard,
-    });
-
-    // Update dropdown if history changed
-    populateHistoryDropdown(result.newHistory);
-
-    if (result.clipboardChanged) {
-      showStatus("Loaded from clipboard", "success");
-    }
-    return;
-  }
-
-  // Fallback if shared module not available (shouldn't happen in extension)
-  if (newClipboard) {
-    textInput.value = newClipboard;
-    await addToHistory(newClipboard);
-    generateQRCode(newClipboard);
+  // Determine what to display
+  if (clipboardContent && clipboardContent !== lastSeenClipboard) {
+    // NEW clipboard content detected - user copied something new
+    currentHistory = updateHistoryArray(currentHistory, clipboardContent);
+    lastSeenClipboard = clipboardContent;
+    
+    // Save state and update UI
+    saveState(currentHistory, lastSeenClipboard);
+    populateHistoryDropdown(currentHistory);
+    
+    textInput.value = clipboardContent;
+    generateQRCode(clipboardContent);
     showStatus("Loaded from clipboard", "success");
-    return;
+  } else {
+    // Clipboard unchanged (or empty/failed) - show most recent history item
+    const mostRecent = currentHistory.length > 0 ? currentHistory[currentHistory.length - 1] : "";
+    textInput.value = mostRecent;
+    generateQRCode(mostRecent);
   }
-
-  if (history.length > 0) {
-    textInput.value = history[history.length - 1];
-    generateQRCode(textInput.value);
-    return;
-  }
-
-  textInput.value = "";
-  generateQRCode("");
 }
 
-// Event listeners
+// ============================================================================
+// EVENT HANDLERS
+// ============================================================================
+
+// Debounced QR code update
+const debouncedQRUpdate = debounce(() => {
+  generateQRCode(textInput.value);
+}, 300);
+
+// Debounced history save (for text edits)
+const debouncedHistorySave = debounce(() => {
+  const trimmed = trimmedText(textInput.value);
+  if (!trimmed) return;
+  
+  // Update history with edited text
+  currentHistory = updateHistoryArray(currentHistory, trimmed);
+  saveHistoryOnly(currentHistory);
+  populateHistoryDropdown(currentHistory);
+}, 400);
+
+// Text input handler
 textInput.addEventListener("input", () => {
-  debouncedInputChange();
-  saveCurrentTextImmediately(); // Save currentText immediately (not debounced)
-  debouncedHistorySave(); // History can be debounced
+  debouncedQRUpdate();
+  debouncedHistorySave();
 });
 
-textInput.addEventListener("paste", async () => {
-  // Wait for paste to apply to textarea value
-  setTimeout(async () => {
+// Paste handler
+textInput.addEventListener("paste", () => {
+  setTimeout(() => {
     const trimmed = trimmedText(textInput.value);
     if (!trimmed) return;
-
+    
     textInput.value = trimmed;
-    saveCurrentTextImmediately();
-    await addToHistory(trimmed);
+    currentHistory = updateHistoryArray(currentHistory, trimmed);
+    saveHistoryOnly(currentHistory);
+    populateHistoryDropdown(currentHistory);
+    generateQRCode(trimmed);
   }, 0);
 });
 
-// History dropdown change handler
+// History dropdown handler - NOW COPIES TO CLIPBOARD
 historyDropdown.addEventListener("change", async () => {
   const val = historyDropdown.value;
   if (!val) return;
 
-  // Set textInput.value to selected item
+  // Update text input and QR code
   textInput.value = val;
-
-  // Move selected item to end of array
-  await moveToEnd(val);
-
-  // Save as current text (fire-and-forget)
-  saveCurrentTextImmediately();
-
-  // Generate QR code
   generateQRCode(val);
 
-  showStatus("Loaded from history", "success");
+  // Copy to clipboard - this makes the extension a clipboard manager!
+  const copied = await copyToClipboard(val);
+  
+  // Update state: move to end of history and update lastSeen
+  currentHistory = updateHistoryArray(currentHistory, val);
+  lastSeenClipboard = val;
+  saveState(currentHistory, lastSeenClipboard);
+  populateHistoryDropdown(currentHistory);
+
+  // Reset dropdown to placeholder
+  historyDropdown.selectedIndex = 0;
+
+  if (copied) {
+    showStatus("Copied to clipboard!", "success");
+  } else {
+    showStatus("Loaded from history", "success");
+  }
 });
 
-// Flush pending history saves when popup is about to close
-// Note: currentText is saved immediately, so no need to flush it
+// Flush pending saves on popup close
 function flushPendingSaves() {
   debouncedHistorySave.flush();
 }
 
-// Listen for popup close events
 window.addEventListener("pagehide", flushPendingSaves);
 window.addEventListener("beforeunload", flushPendingSaves);
 document.addEventListener("visibilitychange", () => {
@@ -372,7 +310,7 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// Initialize when popup opens
+// Initialize
 document.addEventListener("DOMContentLoaded", () => {
   loadInitialState();
 });
