@@ -76,7 +76,11 @@ function generateQRCode(text) {
   const normalized = trimmedText(text);
   if (!normalized) {
     if (qrCodeInstance) {
-      qrCodeInstance.clear();
+      try {
+        qrCodeInstance.clear();
+      } catch (e) {
+        // Ignore errors when clearing
+      }
       qrCodeInstance = null;
     }
     qrCodeContainer.innerHTML = "";
