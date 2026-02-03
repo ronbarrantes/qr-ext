@@ -40,9 +40,17 @@ async function addToHistory(text) {
 
   // Serialize read-modify-write to avoid losing intermediate copies.
   await enqueueHistoryWrite(async () => {
-    const history = await getHistory();
-    const updated = shared?.updateHistory?.(history, t, HISTORY_LIMIT) ?? history;
-    await storageSet({ [STORAGE_KEY]: updated });
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const history = await getHistory();
+      const updated = shared?.updateHistory?.(history, t, HISTORY_LIMIT) ?? history;
+      await storageSet({ [STORAGE_KEY]: updated });
+
+      const saved = await getHistory();
+      if (saved.includes(t)) {
+        return;
+      }
+    }
   });
 }
 
@@ -63,4 +71,3 @@ document.addEventListener(
   },
   true
 );
-
