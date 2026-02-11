@@ -116,6 +116,27 @@ h1 {
   gap: 8px;
 }
 
+.toast-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toast-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.toast-toggle:hover {
+  color: var(--text);
+}
+
 .history-row {
   display: flex;
   gap: 10px;

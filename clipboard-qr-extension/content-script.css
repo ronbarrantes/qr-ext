@@ -1,0 +1,64 @@
+#cqr-copy-toast {
+  all: initial;
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2147483647;
+  pointer-events: none;
+  font-family: "IBM Plex Sans", "SF Pro Text", "Segoe UI", sans-serif;
+}
+
+#cqr-copy-toast .cqr-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #e4dfd5;
+  background: #faf7f0;
+  color: #1b1b1b;
+  box-shadow: 0 14px 30px rgba(23, 21, 18, 0.16);
+  transform: translateY(8px);
+  opacity: 0;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+#cqr-copy-toast[data-state="open"] .cqr-card {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+#cqr-copy-toast .cqr-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #2f8f46;
+  box-shadow: 0 0 0 3px rgba(47, 143, 70, 0.12);
+  flex: 0 0 auto;
+}
+
+#cqr-copy-toast .cqr-text {
+  font-size: 13px;
+  line-height: 1.25;
+  max-width: 360px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 520px) {
+  #cqr-copy-toast {
+    right: 12px;
+    left: 12px;
+  }
+
+  #cqr-copy-toast .cqr-text {
+    max-width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #cqr-copy-toast .cqr-card {
+    transition: none;
+  }
+}
