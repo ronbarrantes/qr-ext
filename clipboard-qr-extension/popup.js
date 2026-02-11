@@ -205,7 +205,7 @@ async function loadInitialState() {
   lastSeenClipboard = trimmedText(stored?.[LAST_SEEN_KEY]);
 
   if (showCopyToastCheckbox) {
-    showCopyToastCheckbox.checked = stored?.[SHOW_TOAST_KEY] !== false;
+    showCopyToastCheckbox.checked = stored?.[SHOW_TOAST_KEY] === true;
   }
 
   populateHistoryDropdown(currentHistory);

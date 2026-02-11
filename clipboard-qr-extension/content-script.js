@@ -101,7 +101,7 @@ document.addEventListener(
 
         const showToast = await new Promise((resolve) => {
           chrome.storage.local.get([SHOW_TOAST_KEY], (r) => {
-            resolve(r[SHOW_TOAST_KEY] !== false);
+            resolve(r[SHOW_TOAST_KEY] === true);
           });
         });
         if (showToast) {
