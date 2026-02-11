@@ -4,12 +4,14 @@ const emptyMessage = document.getElementById("empty-message");
 const textInput = document.getElementById("text-input");
 const statusEl = document.getElementById("status");
 const historyDropdown = document.getElementById("history-dropdown");
+const showCopyToastCheckbox = document.getElementById("show-copy-toast");
 
 let qrCodeInstance = null;
 
-// Storage keys - simplified to just two
+// Storage keys
 const STORAGE_KEY = "clipboardHistory";       // string[] - history of items (newest at end)
-const LAST_SEEN_KEY = "lastSeenClipboard";    // string - clipboard content when we last read it
+const LAST_SEEN_KEY = "lastSeenClipboard";    // string - last selected/copied value (for dropdown state)
+const SHOW_TOAST_KEY = "showCopyToast";       // boolean - show page toast when copying (content script)
 const HISTORY_LIMIT = 10;
 
 // Shared utilities
@@ -124,6 +126,17 @@ function showStatus(message, type = "") {
   }, 2000);
 }
 
+// Read from system clipboard (used when popup opens to pick up copies from anywhere)
+async function readClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    return trimmedText(text);
+  } catch (error) {
+    console.error("Could not read clipboard:", error);
+    return "";
+  }
+}
+
 // Copy text to system clipboard
 async function copyToClipboard(text) {
   try {
@@ -132,17 +145,6 @@ async function copyToClipboard(text) {
   } catch (error) {
     console.error("Failed to copy to clipboard:", error);
     return false;
-  }
-}
-
-// Read from system clipboard
-async function readClipboard() {
-  try {
-    const text = await navigator.clipboard.readText();
-    return trimmedText(text);
-  } catch (error) {
-    console.error("Could not read clipboard:", error);
-    return "";
   }
 }
 
@@ -198,35 +200,29 @@ let lastSeenClipboard = "";
 // ============================================================================
 
 async function loadInitialState() {
-  // Load stored state
-  const stored = await storageGet([STORAGE_KEY, LAST_SEEN_KEY]);
+  const stored = await storageGet([STORAGE_KEY, LAST_SEEN_KEY, SHOW_TOAST_KEY]);
   currentHistory = coerceTextArray(stored?.[STORAGE_KEY]);
   lastSeenClipboard = trimmedText(stored?.[LAST_SEEN_KEY]);
 
-  // Populate dropdown
+  if (showCopyToastCheckbox) {
+    showCopyToastCheckbox.checked = stored?.[SHOW_TOAST_KEY] === true;
+  }
+
   populateHistoryDropdown(currentHistory);
 
-  // Small delay for clipboard API
-  await new Promise(resolve => setTimeout(resolve, 50));
-
-  // Read current clipboard
+  // When you copy from anywhere, we pick it up when you open the popup and add it to our history
+  await new Promise((resolve) => setTimeout(resolve, 50));
   const clipboardContent = await readClipboard();
 
-  // Determine what to display
   if (clipboardContent && clipboardContent !== lastSeenClipboard) {
-    // NEW clipboard content detected - user copied something new
     currentHistory = updateHistoryArray(currentHistory, clipboardContent);
     lastSeenClipboard = clipboardContent;
-    
-    // Save state and update UI
     saveState(currentHistory, lastSeenClipboard);
     populateHistoryDropdown(currentHistory);
-    
     textInput.value = clipboardContent;
     generateQRCode(clipboardContent);
     showStatus("Loaded from clipboard", "success");
   } else {
-    // Clipboard unchanged (or empty/failed) - show most recent history item
     const mostRecent = currentHistory.length > 0 ? currentHistory[currentHistory.length - 1] : "";
     textInput.value = mostRecent;
     generateQRCode(mostRecent);
@@ -273,7 +269,16 @@ textInput.addEventListener("paste", () => {
   }, 0);
 });
 
-// History dropdown handler - NOW COPIES TO CLIPBOARD
+// Toast toggle – content script reads this to show/hide copy toast
+if (showCopyToastCheckbox) {
+  showCopyToastCheckbox.addEventListener("change", () => {
+    storageSet({ [SHOW_TOAST_KEY]: showCopyToastCheckbox.checked }).catch((err) =>
+      console.error("Failed to save toast preference", err)
+    );
+  });
+}
+
+// History dropdown handler – select a recent item (updates input, QR, and copies to clipboard)
 historyDropdown.addEventListener("change", async () => {
   const val = historyDropdown.value;
   if (!val) return;
