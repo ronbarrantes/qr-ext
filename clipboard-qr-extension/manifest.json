@@ -3,7 +3,7 @@
   "name": "Clipboard QR Code",
   "version": "1.0.0",
   "description": "Generate QR codes from your clipboard content",
-  "permissions": ["storage"],
+  "permissions": ["storage", "clipboardRead"],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

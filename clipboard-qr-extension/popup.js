@@ -126,6 +126,17 @@ function showStatus(message, type = "") {
   }, 2000);
 }
 
+// Read from system clipboard (used when popup opens to pick up copies from anywhere)
+async function readClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    return trimmedText(text);
+  } catch (error) {
+    console.error("Could not read clipboard:", error);
+    return "";
+  }
+}
+
 // Copy text to system clipboard
 async function copyToClipboard(text) {
   try {
@@ -199,9 +210,23 @@ async function loadInitialState() {
 
   populateHistoryDropdown(currentHistory);
 
-  const mostRecent = currentHistory.length > 0 ? currentHistory[currentHistory.length - 1] : "";
-  textInput.value = mostRecent;
-  generateQRCode(mostRecent);
+  // When you copy from anywhere, we pick it up when you open the popup and add it to our history
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const clipboardContent = await readClipboard();
+
+  if (clipboardContent && clipboardContent !== lastSeenClipboard) {
+    currentHistory = updateHistoryArray(currentHistory, clipboardContent);
+    lastSeenClipboard = clipboardContent;
+    saveState(currentHistory, lastSeenClipboard);
+    populateHistoryDropdown(currentHistory);
+    textInput.value = clipboardContent;
+    generateQRCode(clipboardContent);
+    showStatus("Loaded from clipboard", "success");
+  } else {
+    const mostRecent = currentHistory.length > 0 ? currentHistory[currentHistory.length - 1] : "";
+    textInput.value = mostRecent;
+    generateQRCode(mostRecent);
+  }
 }
 
 // ============================================================================
