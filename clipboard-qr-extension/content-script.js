@@ -12,6 +12,9 @@ const TOAST_HIDE_DELAY_MS = 2200;
 let toastHideTimeoutId = null;
 
 function getCopiedText(ev) {
+  const extracted = shared?.extractCopiedTextFromCopyEvent?.(ev, document);
+  if (extracted) return extracted;
+
   try {
     const fromEvent = ev?.clipboardData?.getData?.("text/plain");
     const t = (fromEvent ?? "").toString().trim();
