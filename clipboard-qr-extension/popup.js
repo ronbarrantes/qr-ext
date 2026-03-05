@@ -5,6 +5,11 @@ const textInput = document.getElementById("text-input");
 const statusEl = document.getElementById("status");
 const historyDropdown = document.getElementById("history-dropdown");
 const showCopyToastCheckbox = document.getElementById("show-copy-toast");
+const batchModeToggle = document.getElementById("batch-mode-toggle");
+const batchPrevBtn = document.getElementById("batch-prev");
+const batchNextBtn = document.getElementById("batch-next");
+const batchCountEl = document.getElementById("batch-count");
+const batchControls = document.getElementById("batch-controls");
 
 let qrCodeInstance = null;
 
@@ -12,7 +17,11 @@ let qrCodeInstance = null;
 const STORAGE_KEY = "clipboardHistory";       // string[] - history of items (newest at end)
 const LAST_SEEN_KEY = "lastSeenClipboard";    // string - last selected/copied value (for dropdown state)
 const SHOW_TOAST_KEY = "showCopyToast";       // boolean - show page toast when copying (content script)
-const HISTORY_LIMIT = 10;
+const BATCH_MODE_KEY = "batchMode";           // boolean - toggle for batch mode
+const BATCH_ITEMS_KEY = "batchItems";         // string[] - batch items (one per line)
+const BATCH_INDEX_KEY = "batchIndex";         // number - current batch index
+const HISTORY_LIMIT = 20;
+const BATCH_LIMIT = 20;
 
 // Shared utilities
 const shared = globalThis.ClipboardQrShared;
@@ -43,6 +52,21 @@ function truncateLabel(text, maxLen = 60) {
 
 function coerceTextArray(value) {
   return shared?.coerceTextArray?.(value) ?? (Array.isArray(value) ? value.map(trimmedText).filter(Boolean) : []);
+}
+
+function parseBatchItems(raw) {
+  const text = (raw ?? "").toString();
+  const lines = text.split(/\r?\n/);
+  const items = lines.map((line) => trimmedText(line)).filter(Boolean);
+  return items.slice(0, BATCH_LIMIT);
+}
+
+function clampIndex(index, length) {
+  if (!Number.isFinite(index)) return 0;
+  if (length <= 0) return 0;
+  if (index < 0) return 0;
+  if (index >= length) return length - 1;
+  return index;
 }
 
 // Update history array: dedupe and add to end, enforce limit
@@ -191,21 +215,63 @@ function saveHistoryOnly(history) {
   storageSet({ [STORAGE_KEY]: history }).catch(err => console.error("Failed to save history:", err));
 }
 
+function saveBatchState() {
+  storageSet({
+    [BATCH_MODE_KEY]: batchMode,
+    [BATCH_ITEMS_KEY]: batchItems,
+    [BATCH_INDEX_KEY]: batchIndex,
+  }).catch(err => console.error("Failed to save batch state:", err));
+}
+
+function getActiveText() {
+  if (batchMode) {
+    return batchItems[batchIndex] ?? "";
+  }
+  return trimmedText(textInput.value);
+}
+
+function updateBatchControls() {
+  if (!batchCountEl || !batchPrevBtn || !batchNextBtn || !batchControls || !historyDropdown) return;
+  const count = batchItems.length;
+  batchCountEl.textContent = count ? `${batchIndex + 1} / ${count}` : "0 / 0";
+  const enabled = batchMode && count > 0;
+  batchPrevBtn.disabled = !enabled || batchIndex <= 0;
+  batchNextBtn.disabled = !enabled || batchIndex >= count - 1;
+  batchControls.classList.toggle("hidden", !batchMode);
+  historyDropdown.classList.toggle("hidden", batchMode);
+}
+
 // Current in-memory state
 let currentHistory = [];
 let lastSeenClipboard = "";
+let batchMode = false;
+let batchItems = [];
+let batchIndex = 0;
 
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
 
 async function loadInitialState() {
-  const stored = await storageGet([STORAGE_KEY, LAST_SEEN_KEY, SHOW_TOAST_KEY]);
+  const stored = await storageGet([
+    STORAGE_KEY,
+    LAST_SEEN_KEY,
+    SHOW_TOAST_KEY,
+    BATCH_MODE_KEY,
+    BATCH_ITEMS_KEY,
+    BATCH_INDEX_KEY,
+  ]);
   currentHistory = coerceTextArray(stored?.[STORAGE_KEY]);
   lastSeenClipboard = trimmedText(stored?.[LAST_SEEN_KEY]);
+  batchMode = stored?.[BATCH_MODE_KEY] === true;
+  batchItems = coerceTextArray(stored?.[BATCH_ITEMS_KEY]).slice(0, BATCH_LIMIT);
+  batchIndex = clampIndex(Number(stored?.[BATCH_INDEX_KEY]), batchItems.length);
 
   if (showCopyToastCheckbox) {
     showCopyToastCheckbox.checked = stored?.[SHOW_TOAST_KEY] === true;
+  }
+  if (batchModeToggle) {
+    batchModeToggle.checked = batchMode;
   }
 
   populateHistoryDropdown(currentHistory);
@@ -214,11 +280,25 @@ async function loadInitialState() {
   await new Promise((resolve) => setTimeout(resolve, 50));
   const clipboardContent = await readClipboard();
 
+  let clipboardChanged = false;
   if (clipboardContent && clipboardContent !== lastSeenClipboard) {
     currentHistory = updateHistoryArray(currentHistory, clipboardContent);
     lastSeenClipboard = clipboardContent;
     saveState(currentHistory, lastSeenClipboard);
     populateHistoryDropdown(currentHistory);
+    clipboardChanged = true;
+  }
+
+  if (batchMode) {
+    textInput.value = batchItems.join("\n");
+    updateBatchControls();
+    generateQRCode(getActiveText());
+    return;
+  }
+
+  updateBatchControls();
+
+  if (clipboardChanged) {
     textInput.value = clipboardContent;
     generateQRCode(clipboardContent);
     showStatus("Loaded from clipboard", "success");
@@ -235,7 +315,7 @@ async function loadInitialState() {
 
 // Debounced QR code update
 const debouncedQRUpdate = debounce(() => {
-  generateQRCode(textInput.value);
+  generateQRCode(getActiveText());
 }, 300);
 
 // Debounced history save (for text edits)
@@ -249,8 +329,26 @@ const debouncedHistorySave = debounce(() => {
   populateHistoryDropdown(currentHistory);
 }, 400);
 
+const debouncedBatchUpdate = debounce(() => {
+  const rawLines = (textInput.value ?? "").toString().split(/\r?\n/);
+  const normalized = rawLines.map((line) => trimmedText(line)).filter(Boolean);
+  const truncated = normalized.length > BATCH_LIMIT;
+  batchItems = normalized.slice(0, BATCH_LIMIT);
+  batchIndex = clampIndex(batchIndex, batchItems.length);
+  saveBatchState();
+  updateBatchControls();
+  generateQRCode(getActiveText());
+  if (truncated) {
+    showStatus(`Batch limited to ${BATCH_LIMIT} items`, "error");
+  }
+}, 350);
+
 // Text input handler
 textInput.addEventListener("input", () => {
+  if (batchMode) {
+    debouncedBatchUpdate();
+    return;
+  }
   debouncedQRUpdate();
   debouncedHistorySave();
 });
@@ -258,9 +356,14 @@ textInput.addEventListener("input", () => {
 // Paste handler
 textInput.addEventListener("paste", () => {
   setTimeout(() => {
+    if (batchMode) {
+      debouncedBatchUpdate();
+      return;
+    }
+
     const trimmed = trimmedText(textInput.value);
     if (!trimmed) return;
-    
+
     textInput.value = trimmed;
     currentHistory = updateHistoryArray(currentHistory, trimmed);
     saveHistoryOnly(currentHistory);
@@ -278,6 +381,52 @@ if (showCopyToastCheckbox) {
   });
 }
 
+if (batchModeToggle) {
+  batchModeToggle.addEventListener("change", () => {
+    const previousActive = getActiveText();
+    batchMode = batchModeToggle.checked === true;
+
+    if (batchMode) {
+      if (batchItems.length === 0) {
+        batchItems = parseBatchItems(textInput.value);
+      }
+      if (batchItems.length === 0 && previousActive) {
+        batchItems = [previousActive];
+      }
+      batchIndex = clampIndex(batchIndex, batchItems.length);
+      textInput.value = batchItems.join("\n");
+    } else {
+      textInput.value = previousActive;
+    }
+
+    saveBatchState();
+    updateBatchControls();
+    generateQRCode(getActiveText());
+  });
+}
+
+if (batchPrevBtn) {
+  batchPrevBtn.addEventListener("click", () => {
+    if (!batchMode) return;
+    if (batchIndex <= 0) return;
+    batchIndex -= 1;
+    saveBatchState();
+    updateBatchControls();
+    generateQRCode(getActiveText());
+  });
+}
+
+if (batchNextBtn) {
+  batchNextBtn.addEventListener("click", () => {
+    if (!batchMode) return;
+    if (batchIndex >= batchItems.length - 1) return;
+    batchIndex += 1;
+    saveBatchState();
+    updateBatchControls();
+    generateQRCode(getActiveText());
+  });
+}
+
 // History dropdown handler – select a recent item (updates input, QR, and copies to clipboard)
 historyDropdown.addEventListener("change", async () => {
   const val = historyDropdown.value;
@@ -286,6 +435,12 @@ historyDropdown.addEventListener("change", async () => {
   // Update text input and QR code
   textInput.value = val;
   generateQRCode(val);
+  if (batchMode) {
+    batchItems = [val];
+    batchIndex = 0;
+    saveBatchState();
+    updateBatchControls();
+  }
 
   // Copy to clipboard - this makes the extension a clipboard manager!
   const copied = await copyToClipboard(val);
@@ -309,6 +464,7 @@ historyDropdown.addEventListener("change", async () => {
 // Flush pending saves on popup close
 function flushPendingSaves() {
   debouncedHistorySave.flush();
+  debouncedBatchUpdate.flush();
 }
 
 window.addEventListener("pagehide", flushPendingSaves);

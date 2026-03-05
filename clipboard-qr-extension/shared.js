@@ -17,7 +17,7 @@
   }
 
   // Newest items are stored at the end of the array.
-  function updateHistory(history, text, limit = 10) {
+  function updateHistory(history, text, limit = 20) {
     const queue = coerceTextArray(history);
     const t = trimmedText(text);
     if (!t) return queue;
@@ -114,7 +114,7 @@
       currentText = "",
       newClipboard = "",
       history = [],
-      limit = 10,
+      limit = 20,
     } = opts || {};
 
     const trimmedLastClipboard = trimmedText(lastClipboard);
@@ -173,4 +173,3 @@
     computeInitialState,
   };
 });
-

@@ -22,6 +22,53 @@
           <select id="history-dropdown" aria-label="Recent clipboard items">
             <option value="">Recent items…</option>
           </select>
+          <div id="batch-controls" class="batch-controls" aria-label="Batch navigation">
+            <div class="group-move-controls">
+              <button
+                id="batch-prev"
+                type="button"
+                class="icon-btn move-group"
+                title="Previous item"
+                aria-label="Previous item"
+              >
+                <svg class="move-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4.5 15L12 7.5L19.5 15"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="butt"
+                    stroke-linejoin="miter"
+                    stroke-width="2.25"
+                  />
+                </svg>
+              </button>
+              <button
+                id="batch-next"
+                type="button"
+                class="icon-btn move-group"
+                title="Next item"
+                aria-label="Next item"
+              >
+                <svg class="move-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4.5 9L12 16.5L19.5 9"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="butt"
+                    stroke-linejoin="miter"
+                    stroke-width="2.25"
+                  />
+                </svg>
+              </button>
+            </div>
+            <span id="batch-count" class="batch-count">0 / 0</span>
+          </div>
+        </div>
+        <div class="batch-row">
+          <label class="toast-toggle batch-toggle">
+            <input type="checkbox" id="batch-mode-toggle" />
+            <span>Batch mode</span>
+          </label>
         </div>
         <label class="toast-toggle">
           <input type="checkbox" id="show-copy-toast" />
