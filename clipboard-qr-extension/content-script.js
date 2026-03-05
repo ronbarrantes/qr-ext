@@ -5,7 +5,7 @@ const enqueueMessage = shared?.createSerialQueue?.() ?? ((fn) => Promise.resolve
 
 const SHOW_TOAST_KEY = "showCopyToast";
 const STORAGE_KEY = "clipboardHistory";
-const HISTORY_LIMIT = 10;
+const HISTORY_LIMIT = 20;
 const TOAST_ID = "cqr-copy-toast";
 const TOAST_MAX_TEXT_LENGTH = 120;
 const TOAST_HIDE_DELAY_MS = 2200;
