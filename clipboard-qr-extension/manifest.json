@@ -3,13 +3,23 @@
   "name": "Clipboard QR Code",
   "version": "1.0.0",
   "description": "Generate QR codes from your clipboard content",
-  "permissions": ["storage", "clipboardRead"],
+  "permissions": [
+    "storage",
+    "clipboardRead"
+  ],
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "<all_urls>"
+      ],
       "all_frames": true,
-      "js": ["shared.js", "content-script.js"],
-      "css": ["content-script.css"],
+      "js": [
+        "shared.js",
+        "content-script.js"
+      ],
+      "css": [
+        "content-script.css"
+      ],
       "run_at": "document_start"
     }
   ],
@@ -25,5 +35,8 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
   }
 }
