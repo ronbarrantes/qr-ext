@@ -5,6 +5,9 @@ importScripts('shared.js');
 
 const STORAGE_KEY = "clipboardHistory";
 const HISTORY_LIMIT = 15;
+const enqueueHistoryWrite =
+  globalThis.ClipboardQrShared?.createSerialQueue?.() ??
+  ((task) => Promise.resolve().then(task));
 
 function storageGet(keys) {
   return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
@@ -21,14 +24,16 @@ function storageSet(obj) {
 }
 
 async function addCopiedTextToHistory(text) {
-  const shared = globalThis.ClipboardQrShared;
-  const trimmed = shared?.trimmedText?.(text) ?? "";
-  if (!trimmed) return;
+  return enqueueHistoryWrite(async () => {
+    const shared = globalThis.ClipboardQrShared;
+    const trimmed = shared?.trimmedText?.(text) ?? "";
+    if (!trimmed) return;
 
-  const result = await storageGet([STORAGE_KEY]);
-  const history = shared?.coerceTextArray?.(result?.[STORAGE_KEY]) ?? [];
-  const updated = shared?.updateHistory?.(history, trimmed, HISTORY_LIMIT) ?? history;
-  await storageSet({ [STORAGE_KEY]: updated });
+    const result = await storageGet([STORAGE_KEY]);
+    const history = shared?.coerceTextArray?.(result?.[STORAGE_KEY]) ?? [];
+    const updated = shared?.updateHistory?.(history, trimmed, HISTORY_LIMIT) ?? history;
+    await storageSet({ [STORAGE_KEY]: updated });
+  });
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
