@@ -20,7 +20,7 @@ const SHOW_TOAST_KEY = "showCopyToast";       // boolean - show page toast when 
 const BATCH_MODE_KEY = "batchMode";           // boolean - toggle for batch mode
 const BATCH_ITEMS_KEY = "batchItems";         // string[] - batch items (one per line)
 const BATCH_INDEX_KEY = "batchIndex";         // number - current batch index
-const HISTORY_LIMIT = 20;
+const HISTORY_LIMIT = 15;
 const BATCH_LIMIT = 20;
 
 // Shared utilities
