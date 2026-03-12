@@ -1,24 +1,23 @@
-// Shows an optional toast when user copies on the page; adds copied text to history (storage).
+// Shows an optional toast when user copies on the page.
+// Primary persistence path: service worker message.
+// Fallback path: direct storage write when messaging is unavailable.
 
 const shared = globalThis.ClipboardQrShared;
-const enqueueMessage = shared?.createSerialQueue?.() ?? ((fn) => Promise.resolve().then(fn));
 
 const SHOW_TOAST_KEY = "showCopyToast";
 const STORAGE_KEY = "clipboardHistory";
-const HISTORY_LIMIT = 20;
+const HISTORY_LIMIT = 15;
 const TOAST_ID = "cqr-copy-toast";
 const TOAST_MAX_TEXT_LENGTH = 120;
 const TOAST_HIDE_DELAY_MS = 2200;
+const MESSAGE_TIMEOUT_MS = 800;
+const enqueueFallbackWrite =
+  shared?.createSerialQueue?.() ?? ((task) => Promise.resolve().then(task));
 let toastHideTimeoutId = null;
 
 function getCopiedText(ev) {
-  try {
-    const fromEvent = ev?.clipboardData?.getData?.("text/plain");
-    const t = (fromEvent ?? "").toString().trim();
-    if (t) return t;
-  } catch (_) {}
-  const selection = document.getSelection();
-  return selection ? selection.toString() : "";
+  const extracted = shared?.extractCopiedTextFromCopyEvent?.(ev, document) ?? "";
+  return (extracted ?? "").toString().trim();
 }
 
 function clampTextForToast(text) {
@@ -67,23 +66,49 @@ function showCopyToast(message) {
   }, TOAST_HIDE_DELAY_MS);
 }
 
-async function addToHistory(text) {
-  const t = shared?.trimmedText?.(text) ?? "";
-  if (!t) return;
+async function addToHistoryFallback(text) {
+  return enqueueFallbackWrite(async () => {
+    const trimmed = shared?.trimmedText?.(text) ?? "";
+    if (!trimmed) return;
 
-  await enqueueMessage(async () => {
-    try {
-      const result = await new Promise((resolve) => chrome.storage.local.get([STORAGE_KEY], resolve));
-      const history = shared?.coerceTextArray?.(result?.[STORAGE_KEY]) ?? [];
-      const updated = shared?.updateHistory?.(history, t, HISTORY_LIMIT) ?? history;
-      await new Promise((resolve, reject) => {
-        chrome.storage.local.set({ [STORAGE_KEY]: updated }, () => {
-          if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-          else resolve();
-        });
+    const result = await new Promise((resolve) => chrome.storage.local.get([STORAGE_KEY], resolve));
+    const history = shared?.coerceTextArray?.(result?.[STORAGE_KEY]) ?? [];
+    const updated = shared?.updateHistory?.(history, trimmed, HISTORY_LIMIT) ?? history;
+    await new Promise((resolve, reject) => {
+      chrome.storage.local.set({ [STORAGE_KEY]: updated }, () => {
+        const err = chrome.runtime?.lastError;
+        if (err) reject(err);
+        else resolve();
       });
-    } catch (err) {
-      console.debug("Clipboard QR Code: failed to store copy event", err);
+    });
+  });
+}
+
+function sendCopyEventToBackground(text) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(false);
+    }, MESSAGE_TIMEOUT_MS);
+
+    try {
+      chrome.runtime.sendMessage({ type: "COPY_CAPTURED", text }, (response) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        if (chrome.runtime?.lastError) {
+          resolve(false);
+          return;
+        }
+        resolve(response?.ok === true);
+      });
+    } catch (_) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(false);
     }
   });
 }
@@ -91,14 +116,11 @@ async function addToHistory(text) {
 document.addEventListener(
   "copy",
   (e) => {
-    const raw = getCopiedText(e);
-    const text = (raw ?? "").trim() || null;
+    const text = getCopiedText(e) || null;
     if (!text) return;
 
     void (async () => {
       try {
-        await addToHistory(text);
-
         const showToast = await new Promise((resolve) => {
           chrome.storage.local.get([SHOW_TOAST_KEY], (r) => {
             resolve(r[SHOW_TOAST_KEY] === true);
@@ -108,8 +130,13 @@ document.addEventListener(
           const displayLabel = clampTextForToast(text) || "Item";
           showCopyToast(`${displayLabel} is on your clipboard`);
         }
+
+        const persistedInBackground = await sendCopyEventToBackground(text);
+        if (!persistedInBackground) {
+          await addToHistoryFallback(text);
+        }
       } catch (err) {
-        console.debug("Clipboard QR Code: failed to store copy event", err);
+        console.debug("Clipboard QR Code: failed to process copy event", err);
       }
     })();
   },
